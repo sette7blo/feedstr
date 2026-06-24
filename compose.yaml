@@ -1,0 +1,25 @@
+# Feedstr local/self-hosted compose.
+#
+# Each *str app owns its own compose file and is independently deployable.
+# Cross-app integration happens through URL + API token, not shared compose.
+
+services:
+  feedstr:
+    build: .
+    container_name: feedstr
+    restart: unless-stopped
+    # Run as your host user (default 1000:1000) so the bind-mounted .env stays
+    # writable when the dashboard saves the Idenstr connection. On a host whose
+    # user is not 1000, set UID/GID in .env to match (chmod 660 .env).
+    user: "${UID:-1000}:${GID:-1000}"
+    env_file: .env
+    ports:
+      - "${FEEDSTR_HOST_BIND:-127.0.0.1}:${FEEDSTR_HOST_PORT:-3002}:3002"
+    volumes:
+      - feedstr-data:/data
+      - ./.env:/app/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  feedstr-data:
