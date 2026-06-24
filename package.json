@@ -1,0 +1,13 @@
+{
+  "name": "feedstr",
+  "version": "0.1.0",
+  "description": "Multi-column Nostr feed reader in the style of TweetDeck, for the modular *str ecosystem.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

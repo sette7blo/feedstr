@@ -1,0 +1,17 @@
+# Claude Code — internal files, never publish
+CLAUDE.md
+.claude/
+
+# Runtime data
+data/
+*.db
+*.backup.*
+
+# Environment / secrets
+.env
+
+# Node
+node_modules/
+
+# Build artifact — injected by CI
+VERSION

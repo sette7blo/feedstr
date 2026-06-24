@@ -1,0 +1,3548 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <title>Feedstr</title>
+  <meta name="description" content="Multi-column Nostr feed reader." />
+  <meta name="theme-color" content="#7c3cff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Feedstr" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="./manifest.webmanifest?v=feedstr-fd-logo" />
+  <link rel="icon" type="image/x-icon" href="./favicon.ico?v=feedstr-fd-logo" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png?v=feedstr-fd-logo" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=feedstr-fd-logo" />
+  <link rel="stylesheet" href="./styles.css?v=mobile-input-zoom-fix-2" />
+</head>
+<body>
+
+<header class="mobile-topbar" aria-label="Feedstr mobile navigation">
+  <button class="mobile-menu-button" id="mobile-menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="mobile-brand">
+    <img class="brand-logo" src="./icons/header-logo.png?v=feedstr-fd-logo" width="26" height="26" alt="" />
+    <span class="brand-name">Feed<span class="brand-name-accent">str</span></span>
+  </div>
+  <button class="mobile-stack-button" id="mobile-stack-btn" type="button">Idenstr</button>
+</header>
+<div class="mobile-menu-backdrop" id="mobile-menu-backdrop"></div>
+
+<div class="app">
+  <!-- sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <img class="brand-logo" src="./icons/header-logo.png?v=feedstr-fd-logo" width="34" height="34" alt="Feedstr" />
+      <span class="brand-name">Feed<span class="brand-name-accent">str</span></span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">
+        <span>Columns</span>
+        <button class="section-add" id="add-column-btn" type="button" title="Add column" aria-label="Add column">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+      <div id="column-list"></div>
+    </nav>
+
+    <div class="sidebar-compose">
+      <button class="btn btn-primary compose-open-btn" id="compose-open-btn" type="button" aria-label="Compose a note">
+        <span class="compose-open-icon" aria-hidden="true"></span>
+        <span>Compose</span>
+      </button>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="connection-chip" id="idenstr-settings-btn" type="button" title="Stack status and settings">
+        <span class="connection-chip-main" id="idenstr-summary">
+          <span class="connection-dot"></span>
+          <span class="connection-chip-text">Checking connection&hellip;</span>
+        </span>
+        <svg class="connection-chip-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="sidebar-status" id="status-bar">
+        <span class="dot"></span>Connecting...
+      </div>
+    </div>
+  </aside>
+
+  <!-- columns -->
+  <div class="columns" id="columns"></div>
+</div>
+
+<!-- floating compose button (primary on mobile) -->
+<button class="compose-fab" id="compose-fab" type="button" aria-label="Compose a note">
+  <span class="compose-fab-icon" aria-hidden="true"></span>
+</button>
+
+<!-- add column modal -->
+<div class="modal-overlay" id="add-column-modal">
+  <div class="modal" id="modal-content">
+    <!-- populated by JS -->
+  </div>
+</div>
+
+<div class="toast-host" id="toast-host" aria-live="polite" aria-atomic="false"></div>
+
+<!-- compose modal -->
+<div class="modal-overlay" id="compose-modal">
+  <div class="modal compose-modal-card">
+    <div class="compose-head">
+      <span class="compose-label">Compose</span>
+      <div class="compose-head-right">
+        <span class="compose-at-hint" title="Type @ to mention a follow">@ to mention</span>
+        <button class="compose-close-btn" id="compose-close-btn" type="button" aria-label="Close composer"></button>
+      </div>
+    </div>
+    <div class="compose-input-wrap">
+      <textarea id="compose-text" placeholder="Share an update&hellip;"></textarea>
+      <div class="mention-suggest hidden" id="compose-mention-suggest" role="listbox" aria-label="Mention suggestions"></div>
+    </div>
+    <div class="compose-tags hidden" id="compose-tags" aria-label="Tagged people"></div>
+    <div class="compose-media-status hidden" id="compose-media-status" role="status" aria-live="polite"></div>
+    <div class="compose-actions">
+      <input class="compose-media-input" id="compose-media-input" type="file" accept="image/*" hidden aria-hidden="true" tabindex="-1" />
+      <button class="btn btn-ghost btn-sm compose-media-btn" id="compose-media-btn" type="button" title="Insert photo" aria-label="Insert photo from this device">
+        <span class="compose-media-icon" aria-hidden="true"></span>
+        <span class="compose-media-text">Photo</span>
+      </button>
+      <button class="btn btn-primary btn-sm" id="compose-send" disabled>Post</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// -- state --
+const state = {
+  identity: null,
+  relays: { read: [], write: [] },
+  following: [],
+  columns: [],
+  subs: new Map(),
+  sockets: new Map(),
+  profileSockets: new Map(),
+  notes: new Map(),
+  liked: new Set(),
+  mutes: { entries: [] }, // Idenstr kind:10000 mute list; suppresses keywords, people, threads, and events
+  likeEvents: new Map(), // noteId -> our own kind:7 reaction event id (for un-like)
+  replyCounts: new Map(), // noteId -> Set of reply event ids
+  reactionCounts: new Map(), // noteId -> Set of kind:7 event ids
+  repostCounts: new Map(), // noteId -> Set of kind:6 event ids
+  embeddedEventFetchTried: new Set(),
+  profiles: new Map(),
+  profileFetchTried: new Set(),
+  profileFetchAttempts: new Map(),
+  config: null,
+  idenstrStatus: null,
+  composeMentionIndex: [],
+  composeMentions: []
+};
+
+const requiredIdenstrScopes = ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:5', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235'];
+const profileDiscoveryRelays = ['wss://purplepag.es', 'wss://user.kindpag.es'];
+
+// -- boot --
+async function boot() {
+  try {
+    state.config = await api('/api/v1/config');
+    state.idenstrStatus = await api('/api/v1/idenstr/status');
+    renderIdenstrSummary();
+
+    if (!state.config.idenstrTokenConfigured) {
+      setStatus(false, 'Idenstr token missing');
+      showIdenstrSettings('Feedstr needs an Idenstr-issued token before it can load feeds or publish.');
+      return;
+    }
+    if (state.idenstrStatus.missingScopes?.length) {
+      setStatus(false, 'Idenstr token missing scopes');
+      showIdenstrSettings(`Token is missing: ${state.idenstrStatus.missingScopes.join(', ')}`);
+      return;
+    }
+
+    const [identity, relays, directoryResponse, mutesResponse] = await Promise.all([
+      api('/api/v1/idenstr/identity'),
+      api('/api/v1/idenstr/relays'),
+      api('/api/v1/idenstr/following/directory'),
+      api('/api/v1/idenstr/mutes').catch(() => null)
+    ]);
+    const directory = Array.isArray(directoryResponse) ? directoryResponse : (directoryResponse.entries ?? directoryResponse.following ?? []);
+    state.identity = identity;
+    const privateRelayUrl = state.config.privateRelayUrl || '';
+    state.relays.read = relays.read ?? [];
+    state.relays.write = relays.write ?? [];
+    if (privateRelayUrl) state.relays.read = [privateRelayUrl, ...state.relays.read];
+    state.following = directory.map(e => ({
+      pubkey: e.pubkey,
+      npub: '',
+      petname: e.petname ?? '',
+      name: e.name ?? e.petname ?? '',
+      picture: e.picture ?? ''
+    }));
+    refreshFollowingSet();
+
+    // seed profile cache from directory
+    for (const e of directory) {
+      if (e.pubkey) {
+        state.profiles.set(e.pubkey, {
+          name: e.name ?? '',
+          display_name: e.name ?? '',
+          picture: e.picture ?? '',
+          created_at: 0
+        });
+      }
+    }
+
+    buildComposeMentionIndex();
+    renderComposeMentionPicker();
+
+    setStatus(true, `${state.relays.read.length} relays · ${state.following.length} follows`);
+
+    // load saved columns from Feedstr's DB, migrating any older localStorage copy
+    state.columns = await loadColumns();
+    state.liked = await loadLiked();
+    state.mutes = normalizeMutes(mutesResponse || await loadMutes());
+    refreshMuteSets();
+    renderColumns();
+    for (const col of state.columns) hydrateColumnCache(col);
+    connectRelays();
+  } catch (err) {
+    setStatus(false, 'Failed to connect to Idenstr');
+    renderIdenstrSummary(err);
+    showIdenstrSettings(err.message);
+    console.error('Boot failed:', err);
+  }
+}
+
+// -- api helper --
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      detail = body.detail || body.message || body.error || detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// Drives the single sidebar connection chip. The full URL/token/scope detail
+// lives in the settings modal the chip opens; here we show just the state.
+function renderIdenstrSummary(error = null) {
+  const chip = document.getElementById('idenstr-settings-btn');
+  const el = document.getElementById('idenstr-summary');
+  const cfg = state.config;
+  const status = state.idenstrStatus;
+  let stateClass = 'warn';
+  let text = 'Checking connection…';
+  if (error) {
+    stateClass = 'error';
+    text = 'Idenstr unreachable';
+  } else if (!cfg) {
+    stateClass = 'warn';
+    text = 'Idenstr · not checked';
+  } else if (status?.ok) {
+    stateClass = 'ok';
+    text = 'Idenstr linked';
+  } else {
+    stateClass = 'warn';
+    text = cfg.idenstrTokenConfigured ? 'Idenstr · setup needed' : 'Idenstr · token missing';
+  }
+  if (chip) chip.className = `connection-chip ${stateClass}`;
+  el.innerHTML = `<span class="connection-dot"></span><span class="connection-chip-text">${esc(text)}</span>`;
+}
+
+function showIdenstrSettings(reason = '') {
+  const cfg = state.config || {};
+  const status = state.idenstrStatus || {};
+  const required = cfg.requiredIdenstrScopes || requiredIdenstrScopes;
+  const granted = status.grantedScopes || [];
+  const missing = status.missingScopes || required;
+  const privateRelay = cfg.privateRelayUrl || '';
+  const linked = Boolean(status.ok && cfg.idenstrTokenConfigured && !missing.length);
+  const tokenLabel = cfg.idenstrTokenConfigured ? 'configured' : 'missing';
+  const mc = document.getElementById('modal-content');
+  const relayOk = Boolean(privateRelay);
+  const tokenOk = Boolean(cfg.idenstrTokenConfigured);
+  const scopesOk = !missing.length;
+  const apiOk = Boolean(cfg.idenstrUrl) && Boolean(status.ok);
+  const flag = (ok, okText, warnText) =>
+    `<span class="stack-flag ${ok ? 'ok' : 'warn'}">${ok ? okText : warnText}</span>`;
+  mc.innerHTML = `
+    <div class="connection-head">
+      <div>
+        <div class="section-label">Settings</div>
+        <h2>Feedstr</h2>
+        <p class="settings-copy">Feedstr keeps no nsec. It stores only Idenstr's URL, a scoped token, and the relay address you set, then asks Idenstr for signing.</p>
+      </div>
+      <span class="status-orb ${linked ? 'ok' : 'warn'}">${linked ? 'linked' : 'setup'}</span>
+    </div>
+    ${reason ? `<div class="terminal-mini ${linked ? 'ok' : 'warn'}">$ feedstr stack check\n${esc(reason)}</div>` : ''}
+
+    <div class="connection-section">
+      <div class="subsection-head">
+        <span>Stack connection</span>
+        <button class="btn btn-ghost btn-mini" type="button" id="settings-recheck">Recheck</button>
+      </div>
+      <div class="stack-summary">
+        <div class="stack-row">
+          <span class="stack-row-label">Idenstr</span>
+          <span class="stack-row-value"><strong>${esc(cfg.idenstrUrl || 'not configured')}</strong>${flag(apiOk, 'reachable', cfg.idenstrUrl ? 'no response' : 'not set')}</span>
+        </div>
+        <div class="stack-row">
+          <span class="stack-row-label">Private relay</span>
+          <span class="stack-row-value"><strong>${esc(privateRelay || 'not set')}</strong>${flag(relayOk, 'set', 'not set')}</span>
+        </div>
+        <div class="stack-row">
+          <span class="stack-row-label">Scoped token</span>
+          <span class="stack-row-value"><strong>${esc(tokenLabel)}</strong>${flag(tokenOk, 'present', 'missing')}</span>
+        </div>
+        <div class="stack-row">
+          <span class="stack-row-label">Token scopes</span>
+          <span class="stack-row-value"><strong>${scopesOk ? 'all granted' : `${missing.length} missing`}</strong>${flag(scopesOk, 'ok', 'incomplete')}</span>
+        </div>
+      </div>
+
+      <details class="setup-details" id="edit-connection"${linked ? '' : ' open'}>
+        <summary>Edit connection</summary>
+        <form id="idenstr-config-form" class="settings-form">
+          <div class="form-grid settings-form-grid">
+            <label>
+              Idenstr URL
+              <input name="idenstrUrl" type="url" placeholder="http://100.x.y.z:3000" value="${esc(cfg.idenstrUrl || '')}" required />
+            </label>
+            <label>
+              Idenstr token
+              <input name="idenstrToken" type="password" autocomplete="off" placeholder="Paste new idstr_ token, or leave blank" />
+              <small>Current token: ${cfg.idenstrTokenConfigured ? 'configured' : 'missing'}.</small>
+            </label>
+          </div>
+          <label class="relay-field">
+            Private relay
+            <div class="relay-input-row">
+              <input name="privateRelayUrl" type="text" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="ws://192.168.x.x:7777" value="${esc(cfg.privateRelayUrl || '')}" />
+              <button class="btn btn-ghost relay-test-btn" type="button" id="relay-test-btn">Test</button>
+            </div>
+            <small>Idenstr's private relay (LAN or Tailscale address). Saved to <code>FEEDSTR_PRIVATE_RELAY_URL</code>. Test checks it from this browser, exactly how the feed reads it.</small>
+          </label>
+          <div id="relay-test-status" class="terminal-mini hidden"></div>
+
+          <div class="scope-detail">
+            <div class="subsection-head"><span>Required token scopes</span><small>${missing.length ? `${missing.length} missing` : 'all granted'}</small></div>
+            <div class="scope-list">
+              ${required.map(scope => `<span class="scope ${missing.includes(scope) ? 'missing' : 'ok'}">${esc(scope)}</span>`).join('')}
+            </div>
+            ${granted.length ? `<div class="terminal-mini ok">$ idenstr token scopes\n${esc(granted.join('\n'))}</div>` : ''}
+          </div>
+
+          <details class="setup-details setup-steps-details">
+            <summary>How to create the token</summary>
+            <ol class="setup-steps">
+              <li>Open Idenstr and go to the API tokens section.</li>
+              <li>Create a token named <code>feedstr</code>.</li>
+              <li>Select: <code>${esc(required.join(', '))}</code>.</li>
+              <li>Paste the token above and save; Idenstr only shows it once.</li>
+            </ol>
+          </details>
+
+          <div class="modal-actions">
+            <button class="btn btn-primary" type="submit" id="settings-save">Save link</button>
+          </div>
+          <div id="settings-save-status" class="terminal-mini hidden"></div>
+        </form>
+      </details>
+    </div>
+
+    <div class="connection-section">
+      <div class="subsection-head"><span>Muted keywords</span><small>${muteEntriesByType('keyword').length} active</small></div>
+      <p class="settings-copy">Notes containing any of these words are hidden from every feed.</p>
+      <form id="mute-add-form" class="relay-input-row">
+        <input id="mute-input" type="text" placeholder="word or phrase" autocomplete="off" autocapitalize="off" spellcheck="false" />
+        <button class="btn btn-ghost" type="submit">Mute</button>
+      </form>
+      <div class="mute-list" id="mute-list"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" type="button" id="settings-close">Close</button>
+    </div>
+  `;
+  document.getElementById('settings-close').onclick = closeModal;
+  document.getElementById('settings-recheck').onclick = recheckIdenstrSettings;
+  document.getElementById('relay-test-btn').onclick = testRelayConnection;
+  document.getElementById('idenstr-config-form').addEventListener('submit', saveIdenstrSettings);
+
+  renderMuteList();
+  document.getElementById('mute-add-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('mute-input');
+    const term = input.value.trim().toLowerCase();
+    input.value = '';
+    if (!term || muteEntriesByType('keyword').some(entry => entry.value === term)) return;
+    state.mutes.entries.push({ id: `local-${Date.now()}`, type: 'keyword', value: term, label: '', addedAt: new Date().toISOString() });
+    refreshMuteSets();
+    persistMutes();
+    renderMuteList();
+    scheduleRerenderAllColumns();
+    toast(`Muted "${term}"`, 'success');
+  });
+  document.getElementById('mute-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('.mute-remove');
+    if (!btn) return;
+    const term = btn.dataset.mute;
+    state.mutes.entries = (state.mutes.entries ?? []).filter(m => !(m.type === 'keyword' && m.value === term));
+    refreshMuteSets();
+    persistMutes();
+    renderMuteList();
+    scheduleRerenderAllColumns();
+    toast(`Unmuted "${term}"`, 'success');
+  });
+
+  modal.classList.add('open');
+}
+
+function renderMuteList() {
+  const list = document.getElementById('mute-list');
+  if (!list) return;
+  const keywords = muteEntriesByType('keyword');
+  list.innerHTML = keywords.length
+    ? keywords.map(m => `<span class="mute-chip">${esc(m.value)}<button type="button" class="mute-remove" data-mute="${esc(m.value)}" aria-label="Unmute ${esc(m.value)}">&times;</button></span>`).join('')
+    : '<span class="settings-copy">No muted keywords.</span>';
+  const count = list.closest('.connection-section')?.querySelector('.subsection-head small');
+  if (count) count.textContent = `${keywords.length} active`;
+}
+
+async function recheckIdenstrSettings() {
+  const button = document.getElementById('settings-recheck');
+  setButtonState(button, 'busy', 'Checking...');
+  try {
+    state.config = await api('/api/v1/config');
+    state.idenstrStatus = await api('/api/v1/idenstr/status');
+    renderIdenstrSummary();
+    showIdenstrSettings(state.idenstrStatus.ok ? 'Connection is healthy.' : 'Connection still needs attention.');
+  } finally {
+    setButtonState(button, 'idle');
+  }
+}
+
+async function saveIdenstrSettings(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = document.getElementById('settings-save');
+  const status = document.getElementById('settings-save-status');
+  const payload = {
+    idenstrUrl: form.elements.idenstrUrl.value.trim(),
+    privateRelayUrl: form.elements.privateRelayUrl.value.trim()
+  };
+  const token = form.elements.idenstrToken.value.trim();
+  if (token) payload.idenstrToken = token;
+  status.className = 'terminal-mini running';
+  status.textContent = '$ feedstr save-link\nwriting .env...';
+  setButtonState(button, 'busy', 'Saving...');
+  try {
+    await api('/api/v1/config', { method: 'PUT', body: payload });
+    state.config = await api('/api/v1/config');
+    state.idenstrStatus = await api('/api/v1/idenstr/status');
+    renderIdenstrSummary();
+    status.className = 'terminal-mini ok';
+    status.textContent = '$ feedstr save-link\nok: saved link + private relay';
+    setButtonState(button, 'done', 'Saved');
+    setTimeout(() => setButtonState(button, 'idle'), 1200);
+  } catch (err) {
+    status.className = 'terminal-mini bad';
+    status.textContent = `$ feedstr save-link\nerror: ${err.message}`;
+    setButtonState(button, 'idle');
+  }
+}
+
+async function testRelayConnection() {
+  const form = document.getElementById('idenstr-config-form');
+  const button = document.getElementById('relay-test-btn');
+  const out = document.getElementById('relay-test-status');
+  const url = form.elements.privateRelayUrl.value.trim();
+  if (!url) return showRelayTest(out, 'warn', '$ feedstr relay-test\nenter a ws:// relay URL first');
+  if (!/^wss?:\/\//i.test(url)) return showRelayTest(out, 'bad', '$ feedstr relay-test\nURL must start with ws:// or wss://');
+
+  setButtonState(button, 'busy', 'Testing...');
+  showRelayTest(out, 'running', `$ feedstr relay-test\nconnecting to ${url} ...`);
+  const result = await probeRelay(url, 6000);
+  if (result.ok) {
+    const nostr = result.nostrMs != null
+      ? `\nrelay answered REQ in ${result.nostrMs}ms — speaks Nostr`
+      : '\nsocket open, but no EOSE within timeout (reachable, response unconfirmed)';
+    showRelayTest(out, 'ok', `$ feedstr relay-test\nconnected in ${result.openMs}ms${nostr}`);
+    setButtonState(button, 'done', 'Reachable');
+    setTimeout(() => setButtonState(button, 'idle'), 1600);
+  } else {
+    showRelayTest(out, 'bad', `$ feedstr relay-test\nfailed: ${result.error}`);
+    setButtonState(button, 'idle');
+  }
+}
+
+// Probe the relay the same way the feed does: open a WebSocket from this browser,
+// then send a tiny REQ and wait for EOSE/EVENT to confirm it speaks Nostr.
+function probeRelay(url, timeoutMs) {
+  return new Promise((resolve) => {
+    const start = performance.now();
+    let openMs = null;
+    let settled = false;
+    let ws;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws && ws.close(); } catch {}
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      done(openMs != null ? { ok: true, openMs, nostrMs: null } : { ok: false, error: 'timed out — relay not reachable from this browser (check address, port, and that you are on the same LAN/Tailnet)' });
+    }, timeoutMs);
+    try { ws = new WebSocket(url); } catch (err) { return done({ ok: false, error: err.message }); }
+    ws.onopen = () => {
+      openMs = Math.round(performance.now() - start);
+      try { ws.send(JSON.stringify(['REQ', 'feedstr-relay-test', { kinds: [1], limit: 1 }])); } catch {}
+    };
+    ws.onmessage = (msg) => {
+      try {
+        const data = JSON.parse(msg.data);
+        if (data[0] === 'EOSE' || data[0] === 'EVENT') {
+          try { ws.send(JSON.stringify(['CLOSE', 'feedstr-relay-test'])); } catch {}
+          done({ ok: true, openMs, nostrMs: Math.round(performance.now() - start) });
+        }
+      } catch {}
+    };
+    ws.onerror = () => done(openMs != null ? { ok: true, openMs, nostrMs: null } : { ok: false, error: 'connection failed — address unreachable or port closed' });
+    ws.onclose = () => done(openMs != null ? { ok: true, openMs, nostrMs: null } : { ok: false, error: 'closed before opening — unreachable or wrong port' });
+  });
+}
+
+function showRelayTest(el, cls, text) {
+  if (!el) return;
+  el.className = `terminal-mini ${cls}`;
+  el.classList.remove('hidden');
+  el.textContent = text;
+}
+
+function setButtonState(button, stateName, text) {
+  if (!button) return;
+  if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+  button.classList.remove('busy', 'done');
+  button.disabled = false;
+  if (stateName === 'busy') {
+    button.classList.add('busy');
+    button.disabled = true;
+    if (text) button.textContent = text;
+  } else if (stateName === 'done') {
+    button.classList.add('done');
+    if (text) button.textContent = text;
+  } else {
+    button.textContent = button.dataset.originalText;
+  }
+}
+
+// -- relay connections --
+function connectRelays() {
+  const relays = [...new Set([...state.relays.read, ...state.relays.write])];
+  for (const url of relays) connectRelay(url);
+}
+
+function connectRelay(url) {
+  if (state.sockets.has(url)) return;
+  let ws;
+  try {
+    ws = new WebSocket(url);
+  } catch { return; }
+
+  ws.onopen = () => {
+    state.sockets.set(url, ws);
+    distributeSubscriptions();
+    refreshVisibleMissingProfiles();
+    // The private relay vaults every event you signed, so backfill your own
+    // kind:7 reactions from it once to light up hearts on previously liked notes.
+    if (url === state.config?.privateRelayUrl && !state._likedBackfilled) {
+      state._likedBackfilled = true;
+      backfillLiked();
+    }
+  };
+
+  ws.onmessage = (msg) => {
+    try {
+      const data = JSON.parse(msg.data);
+      if (data[0] === 'EVENT') handleEvent(data[1], data[2]);
+      if (data[0] === 'EOSE') handleEose(data[1]);
+    } catch {}
+  };
+
+  ws.onclose = () => {
+    state.sockets.delete(url);
+    setTimeout(() => connectRelay(url), 5000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// spread subscriptions across relays so they process in parallel
+function distributeSubscriptions() {
+  const sockets = [...state.sockets.values()].filter(ws => ws.readyState === WebSocket.OPEN);
+  if (!sockets.length) return;
+  const subs = [...state.subs.entries()];
+  for (let i = 0; i < subs.length; i++) {
+    const [subId, sub] = subs[i];
+    // Timelines are round-robin sampled for performance, but notification and
+    // profile lookups must fan out to every connected relay. Otherwise people
+    // who only appear on a relay outside the sampled 2-3 relays seem to vanish.
+    const count = sub.allRelays ? sockets.length : Math.min(3, sockets.length);
+    for (let j = 0; j < count; j++) {
+      const ws = sockets[(i + j) % sockets.length];
+      ws.send(JSON.stringify(['REQ', subId, ...sub.filters]));
+    }
+  }
+}
+
+function sendToAll(msg) {
+  const payload = JSON.stringify(msg);
+  for (const ws of state.sockets.values()) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+  }
+}
+
+function sendProfileReqToDiscoveryRelays(subId, filter) {
+  const payload = JSON.stringify(['REQ', subId, filter]);
+  for (const url of profileDiscoveryRelays) {
+    let ws = state.profileSockets.get(url);
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+      continue;
+    }
+    if (ws && ws.readyState === WebSocket.CONNECTING) {
+      ws.addEventListener('open', () => ws.send(payload), { once: true });
+      continue;
+    }
+    try {
+      ws = new WebSocket(url);
+    } catch { continue; }
+    state.profileSockets.set(url, ws);
+    ws.addEventListener('open', () => ws.send(payload), { once: true });
+    ws.onmessage = (msg) => {
+      try {
+        const data = JSON.parse(msg.data);
+        if (data[0] === 'EVENT') handleEvent(data[1], data[2]);
+        if (data[0] === 'EOSE') handleEose(data[1]);
+      } catch {}
+    };
+    ws.onclose = () => state.profileSockets.delete(url);
+    ws.onerror = () => {};
+  }
+}
+
+function subscribe(subId, filters, columnId, options = {}) {
+  state.subs.set(subId, { filters, columnId, allRelays: Boolean(options.allRelays) });
+  const sockets = [...state.sockets.values()].filter(ws => ws.readyState === WebSocket.OPEN);
+  if (!sockets.length) return;
+  const count = options.allRelays ? sockets.length : Math.min(3, sockets.length);
+  const offset = state.subs.size;
+  for (let j = 0; j < count; j++) {
+    sockets[(offset + j) % sockets.length].send(JSON.stringify(['REQ', subId, ...filters]));
+  }
+}
+
+function unsubscribe(subId) {
+  state.subs.delete(subId);
+  sendToAll(['CLOSE', subId]);
+}
+
+// -- event handling --
+function handleEvent(subId, event) {
+  if (!event || !event.id) return;
+
+  // private-relay backfill of your own kind:7 reactions — record liked note ids
+  // without caching the reaction events themselves.
+  const backfillSub = state.subs.get(subId);
+  if (backfillSub?.likedBackfill) {
+    const likedId = firstTagValue(event, 'e');
+    if (likedId) {
+      if (!state.liked.has(likedId)) {
+        state.liked.add(likedId);
+        backfillSub._found = (backfillSub._found ?? 0) + 1;
+      }
+      state.likeEvents.set(likedId, event.id); // remember reaction id so it can be un-liked
+    }
+    return;
+  }
+
+  // reply-count subscription: tally toward tracked notes, don't add to a column.
+  if (backfillSub?.replyCount) {
+    registerReplyEvent(event);
+    return;
+  }
+
+  // engagement-count subscription: tally reposts (kind:6) and reactions (kind:7).
+  if (backfillSub?.engagementCount) {
+    registerEngagementEvent(event);
+    return;
+  }
+
+  // thread-replies subscription: cache the reply so the open thread can show it.
+  if (backfillSub?.threadReplies) {
+    if (event.kind === 1) {
+      state.notes.set(event.id, event);
+      const actor = getEventActorPubkey(event);
+      if (profileNeedsRefresh(actor)) queueProfileFetch(actor);
+      const col = state.columns.find(c => c.id === backfillSub.columnId);
+      if (col?.thread) scheduleThreadRerender(col);
+    }
+    return;
+  }
+
+  // cache note
+  if (event.kind === 1 || event.kind === 6 || event.kind === 7 || event.kind === 9735) {
+    state.notes.set(event.id, event);
+  }
+
+  // cache profile
+  if (event.kind === 0) {
+    const existing = state.profiles.get(event.pubkey);
+    let changed = false;
+    if (!existing || event.created_at > (existing.created_at ?? 0)) {
+      try {
+        const profile = JSON.parse(event.content);
+        const next = { ...profile, created_at: event.created_at };
+        changed = profileDisplayChanged(existing, next);
+        state.profiles.set(event.pubkey, next);
+      } catch {}
+    }
+    if (changed) {
+      rerenderColumnsForAuthor(event.pubkey);
+      rerenderColumnsForReferencedProfile(event.pubkey);
+    }
+    return;
+  }
+
+  // route to column
+  const sub = state.subs.get(subId);
+  if (!sub) return;
+  const col = state.columns.find(c => c.id === sub.columnId);
+  if (!col) return;
+
+  if (!col.events) col.events = [];
+  if (col.events.some(e => e.id === event.id)) return;
+  col.events.push(event);
+  col.events.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
+  if (col.events.length > 500) col.events = col.events.slice(0, 500);
+
+  // queue profile fetch for visible actors whose cache is missing or lacks an avatar.
+  // Idenstr's following directory can provide names without pictures, so presence
+  // in state.profiles is not enough for mention/notification avatars.
+  const actorPubkey = getEventActorPubkey(event);
+  if (profileNeedsRefresh(actorPubkey)) queueProfileFetch(actorPubkey);
+
+  // Don't repaint while a thread is open over this column — it would reset the
+  // reader's scroll. The cached events are still stored for when they go back.
+  if (!col.thread) scheduleRenderColumnFeed(col);
+  scheduleCacheColumn(col);
+}
+
+function handleEose(subId) {
+  const sub = state.subs.get(subId);
+  if (!sub) return;
+  if (sub.likedBackfill) {
+    unsubscribe(subId);
+    if (sub._found) {
+      persistLiked();
+      scheduleRerenderAllColumns();
+    }
+    return;
+  }
+  if (sub.oneshot) {
+    unsubscribe(subId);
+    if (sub.embedded) {
+      scheduleRerenderAllColumns();
+    }
+    for (const col of state.columns) {
+      if (col.type === 'mentions' || col.type === 'notifications') renderColumnFeed(col);
+    }
+    return;
+  }
+}
+
+// -- on-demand profile fetch for visible note authors --
+let _profileTimer = null;
+function profileNeedsRefresh(pubkey) {
+  if (!pubkey) return false;
+  const profile = state.profiles.get(pubkey);
+  const attempts = state.profileFetchAttempts.get(pubkey) ?? 0;
+  return (!profile || !profile.picture) && attempts < 4;
+}
+
+function profileDisplayChanged(existing, next) {
+  if (!existing) return true;
+  const fields = ['name', 'display_name', 'displayName', 'picture'];
+  return fields.some(field => (existing?.[field] ?? '') !== (next?.[field] ?? ''));
+}
+
+function queueProfileFetch(pubkey) {
+  if (!profileNeedsRefresh(pubkey)) return;
+  if (!state._profileQueue) state._profileQueue = new Set();
+  state._profileQueue.add(pubkey);
+  scheduleProfileFetch();
+}
+
+function scheduleProfileFetch() {
+  if (_profileTimer) return;
+  _profileTimer = setTimeout(() => {
+    _profileTimer = null;
+    const queue = state._profileQueue;
+    if (!queue || !queue.size) return;
+    const pubkeys = [...queue].filter(profileNeedsRefresh).slice(0, 50);
+    for (const pubkey of pubkeys) {
+      queue.delete(pubkey);
+      state.profileFetchTried.add(pubkey);
+      state.profileFetchAttempts.set(pubkey, (state.profileFetchAttempts.get(pubkey) ?? 0) + 1);
+    }
+    if (!pubkeys.length) return;
+    const subId = `profiles_${Date.now()}`;
+    const filter = { kinds: [0], authors: pubkeys, limit: pubkeys.length };
+    // one-shot REQ, auto-close on EOSE. Ask every connected relay because
+    // profile metadata may live on different relays than the note itself.
+    state.subs.set(subId, { filters: [filter], columnId: null, oneshot: true, allRelays: true });
+    sendToAll(['REQ', subId, filter]);
+    sendProfileReqToDiscoveryRelays(subId, filter);
+    if (queue.size) scheduleProfileFetch();
+  }, 350);
+}
+
+function refreshVisibleMissingProfiles() {
+  for (const col of state.columns) {
+    for (const event of col.events ?? []) {
+      for (const pubkey of getEventProfilePubkeys(event)) {
+        if (profileNeedsRefresh(pubkey)) queueProfileFetch(pubkey);
+      }
+    }
+  }
+}
+
+function getEventProfilePubkeys(event) {
+  const pubkeys = new Set();
+  const actorPubkey = getEventActorPubkey(event);
+  if (actorPubkey) pubkeys.add(actorPubkey);
+  for (const tag of event?.tags ?? []) {
+    if (tag[0] === 'p' && isHex(tag[1], 64)) pubkeys.add(tag[1]);
+  }
+  for (const ref of extractNostrRefs(expandIndexedNostrReferences(event?.content ?? '', event), { queue: false }).filter(ref => ref.kind === 'profile')) {
+    if (ref.pubkey) pubkeys.add(ref.pubkey);
+  }
+  return [...pubkeys];
+}
+
+function handleAvatarImageError(img) {
+  const pubkey = img?.dataset?.pubkey;
+  img?.remove();
+  if (!pubkey) return;
+  const profile = state.profiles.get(pubkey);
+  if (profile?.picture) {
+    state.profiles.set(pubkey, { ...profile, picture_failed: profile.picture, picture: '' });
+  }
+  // A broken image means cached metadata was unusable. Retry kind:0 lookups
+  // across connected relays instead of keeping the purple placeholder forever.
+  state.profileFetchTried.delete(pubkey);
+  queueProfileFetch(pubkey);
+}
+
+// Coalesce repaints for a column. Relays stream events independently, so a
+// single scroll of the feed can trigger dozens of render requests in one frame;
+// batching them into one paint per animation frame is what stops the feed from
+// flashing as different relays answer at different times.
+const _colRenderFrames = new Map();
+function scheduleRenderColumnFeed(col) {
+  if (!col?.id) return;
+  if (_colRenderFrames.has(col.id)) return;
+  _colRenderFrames.set(col.id, requestAnimationFrame(() => {
+    _colRenderFrames.delete(col.id);
+    renderColumnFeed(col);
+  }));
+}
+
+function rerenderColumnsForAuthor(pubkey) {
+  for (const col of state.columns) {
+    if ((col.events ?? []).some(event => getEventActorPubkey(event) === pubkey || event.pubkey === pubkey)) scheduleRenderColumnFeed(col);
+  }
+}
+
+function rerenderColumnsForReferencedProfile(pubkey) {
+  for (const col of state.columns) {
+    if ((col.events ?? []).some(event => getEventProfilePubkeys(event).includes(pubkey))) scheduleRenderColumnFeed(col);
+  }
+}
+
+function rerenderAllColumns() {
+  for (const col of state.columns) renderColumnFeed(col);
+}
+
+let _rerenderAllTimer = null;
+function scheduleRerenderAllColumns() {
+  if (_rerenderAllTimer) return;
+  _rerenderAllTimer = setTimeout(() => {
+    _rerenderAllTimer = null;
+    rerenderAllColumns();
+  }, 250);
+}
+
+function fetchEmbeddedEvent(eventId, relayHints = []) {
+  if (!eventId || state.notes.has(eventId) || state.embeddedEventFetchTried.has(eventId)) return;
+  state.embeddedEventFetchTried.add(eventId);
+  if (!state._embeddedQueue) state._embeddedQueue = new Map();
+  state._embeddedQueue.set(eventId, relayHints);
+  scheduleEmbeddedFetch();
+}
+
+let _embeddedFetchTimer = null;
+function scheduleEmbeddedFetch() {
+  if (_embeddedFetchTimer) return;
+  _embeddedFetchTimer = setTimeout(() => {
+    _embeddedFetchTimer = null;
+    const queue = state._embeddedQueue;
+    if (!queue?.size) return;
+    const entries = [...queue.entries()].slice(0, 50);
+    for (const [eventId] of entries) queue.delete(eventId);
+    const ids = entries.map(([eventId]) => eventId);
+    const subId = `embed_${Date.now()}`;
+    const filter = { kinds: [1], ids, limit: ids.length };
+    state.subs.set(subId, { filters: [filter], columnId: null, oneshot: true, embedded: true, allRelays: true });
+    const hintSockets = [...new Set(entries.flatMap(([, hints]) => hints ?? []))]
+      .map(url => state.sockets.get(url))
+      .filter(ws => ws?.readyState === WebSocket.OPEN);
+    for (const ws of hintSockets) ws.send(JSON.stringify(['REQ', subId, filter]));
+    sendToAll(['REQ', subId, filter]);
+    if (queue.size) scheduleEmbeddedFetch();
+  }, 350);
+}
+
+// -- column rendering --
+function renderColumns() {
+  const container = document.getElementById('columns');
+  container.innerHTML = '';
+  const listEl = document.getElementById('column-list');
+  listEl.innerHTML = '';
+
+  for (const col of state.columns) {
+    // sidebar entry
+    const sideItem = document.createElement('button');
+    sideItem.className = 'sidebar-item';
+    sideItem.textContent = col.name;
+    sideItem.onclick = () => {
+      closeMobileMenu();
+      document.querySelector(`[data-col="${col.id}"]`)?.scrollIntoView({ behavior: 'smooth', inline: 'start' });
+    };
+    listEl.appendChild(sideItem);
+
+    // column element
+    const colEl = document.createElement('div');
+    colEl.className = 'column';
+    colEl.dataset.col = col.id;
+    colEl.innerHTML = `
+      <div class="column-header">${columnHeaderHtml(col)}</div>
+      <div class="column-feed">
+        ${emptyState('Waiting for notes', 'Live updates will appear here')}
+      </div>
+    `;
+    wireColumnHeader(colEl, col);
+    container.appendChild(colEl);
+
+    // start subscription
+    if (!col.events) col.events = [];
+    startColumnSub(col);
+  }
+  saveColumns();
+}
+
+// Column header swaps to a "Thread" + back-arrow layout while a conversation is
+// open in that column, so threads read as in-place navigation, not a popup.
+function columnHeaderHtml(col) {
+  if (col.thread) {
+    return `
+      <div class="column-head-thread">
+        <button class="column-btn" data-action="thread-back" title="Back">${iconSvg('arrow-left')}</button>
+        <div class="column-title">Thread</div>
+      </div>
+      <div class="column-actions"></div>
+    `;
+  }
+  return `
+    <div class="column-head-main">
+      <div class="column-title">${esc(col.name)}</div>
+      <div class="column-subtitle">${columnSubtitle(col)}</div>
+    </div>
+    <div class="column-actions">
+      ${col.type === 'profile' && col.pubkey ? `<button class="follow-toggle${isFollowing(col.pubkey) ? ' following' : ''}" data-action="follow-toggle" title="${isFollowing(col.pubkey) ? 'Unfollow' : 'Follow'}">${isFollowing(col.pubkey) ? 'Following' : '+ Follow'}</button>` : ''}
+      ${col.type === 'profile' && col.pubkey ? `<button class="follow-toggle mute-profile-toggle${isMutedProfile(col.pubkey) ? ' following' : ''}" data-action="mute-profile-toggle" title="${isMutedProfile(col.pubkey) ? 'Unmute profile' : 'Mute profile'}">${isMutedProfile(col.pubkey) ? 'Muted' : 'Mute'}</button>` : ''}
+      <button class="column-btn" data-action="reload" title="Reload">${iconSvg('reload')}</button>
+      ${col.type === 'custom' ? `<button class="column-btn" data-action="edit" title="Edit">${iconSvg('settings')}</button>` : ''}
+      <button class="column-btn" data-action="close" title="Remove">${iconSvg('x')}</button>
+    </div>
+  `;
+}
+
+function wireColumnHeader(colEl, col) {
+  colEl.querySelector('[data-action="reload"]')?.addEventListener('click', () => reloadColumn(col));
+  colEl.querySelector('[data-action="close"]')?.addEventListener('click', () => removeColumn(col.id));
+  colEl.querySelector('[data-action="edit"]')?.addEventListener('click', () => editCustomColumn(col));
+  colEl.querySelector('[data-action="thread-back"]')?.addEventListener('click', () => closeThread(col));
+  colEl.querySelector('[data-action="follow-toggle"]')?.addEventListener('click', () => toggleFollow(col));
+  colEl.querySelector('[data-action="mute-profile-toggle"]')?.addEventListener('click', () => toggleMuteProfile(col));
+}
+
+function updateColumnHeader(col) {
+  const colEl = document.querySelector(`[data-col="${col.id}"]`);
+  if (!colEl) return;
+  colEl.classList.toggle('thread-open', Boolean(col.thread));
+  const header = colEl.querySelector('.column-header');
+  header.innerHTML = columnHeaderHtml(col);
+  wireColumnHeader(colEl, col);
+}
+
+function columnSubtitle(col) {
+  if (col.type === 'home') return 'Your posts';
+  if (col.type === 'following') return 'Following timeline';
+  if (col.type === 'mentions') return 'Legacy mentions';
+  if (col.type === 'hashtag') return `#${col.tag}`;
+  if (col.type === 'profile') return shortNpub(col.pubkey);
+  if (col.type === 'notifications') return 'Replies, mentions, reactions, reposts, zaps';
+  if (col.type === 'custom') return `${(col.pubkeys ?? []).length} accounts`;
+  return '';
+}
+
+function startColumnSub(col) {
+  const subId = `col_${col.id}`;
+  unsubscribe(subId);
+
+  const now = Math.floor(Date.now() / 1000);
+  const since = now - 86400; // last 24h
+  let filters;
+
+  const followPubkeys = state.following.map(f => f.pubkey).filter(Boolean);
+
+  switch (col.type) {
+    case 'home':
+      if (!state.identity?.pubkey) return;
+      filters = [{ kinds: [1], authors: [state.identity.pubkey], since: now - 86400 * 30, limit: 100 }];
+      break;
+    case 'following':
+      if (!followPubkeys.length) return;
+      filters = [{ kinds: [1], authors: followPubkeys, since, limit: 100 }];
+      break;
+    case 'mentions':
+      if (!state.identity?.pubkey) return;
+      filters = [{ kinds: [1], '#p': [state.identity.pubkey], since, limit: 100 }];
+      break;
+    case 'hashtag':
+      if (!col.tag) return;
+      filters = [{ kinds: [1], '#t': [col.tag.toLowerCase()], since, limit: 100 }];
+      break;
+    case 'profile':
+      if (!col.pubkey) return;
+      filters = [{ kinds: [1], authors: [col.pubkey], since: now - 86400 * 7, limit: 100 }];
+      break;
+    case 'notifications':
+      if (!state.identity?.pubkey) return;
+      // Notifications are a finite per-user stream, so reach back much further
+      // than the 24h timeline window and lift the cap — otherwise replies,
+      // reactions, reposts and zaps older than a day silently never load.
+      filters = [{ kinds: [1, 6, 7, 9735], '#p': [state.identity.pubkey], since: now - 86400 * 30, limit: 500 }];
+      break;
+    case 'custom':
+      if (!col.pubkeys?.length) return;
+      filters = [{ kinds: [1], authors: col.pubkeys, since, limit: 100 }];
+      break;
+    default: return;
+  }
+
+  // Profiles are fetched on-demand for visible note authors so mentions and
+  // notifications can resolve avatars even when Idenstr's local directory only
+  // had a name/pubkey cache.
+  if (col.type === 'profile') {
+    filters.push({ kinds: [0], authors: [col.pubkey], limit: 1 });
+  }
+
+  subscribe(subId, filters, col.id, { allRelays: col.type === 'notifications' || col.type === 'mentions' });
+}
+
+// One consistent empty/waiting state across every column and the notifications feed.
+function emptyState(text, sub = '') {
+  return `<div class="column-empty">
+    <div class="column-empty-icon">${iconSvg('inbox')}</div>
+    <div class="column-empty-text">${esc(text)}</div>
+    ${sub ? `<div class="column-empty-sub">${esc(sub)}</div>` : ''}
+  </div>`;
+}
+
+function renderColumnFeed(col) {
+  const feedEl = document.querySelector(`[data-col="${col.id}"] .column-feed`);
+  if (!feedEl) return;
+
+  if (col.thread) return renderThread(col, feedEl);
+  if (col.type === 'notifications') return renderNotificationFeed(col, feedEl);
+
+  const events = (col.events ?? [])
+    .filter(e => e.kind === 1 && !isMuted(e))
+    .slice(0, 200);
+
+  if (!events.length) {
+    feedEl.innerHTML = emptyState('No notes yet', 'Nothing from this source in the last 24h');
+    return;
+  }
+
+  const scrollTop = feedEl.scrollTop;
+  const wasAtTop = scrollTop < 20;
+
+  reconcileChildren(feedEl, events, {
+    keyOf: e => e.id,
+    sigOf: e => noteProfileSignature(e),
+    build: e => renderNote(e),
+    patch: (el, e) => updateNoteProfile(el, e)
+  });
+
+  if (wasAtTop) feedEl.scrollTop = 0;
+  else feedEl.scrollTop = scrollTop;
+
+  // Show "N replies" on your own posts in Home.
+  if (col.type === 'home') scheduleReplyCounts(col);
+  // Show repost/reaction counts on every feed.
+  scheduleEngagementCounts(col);
+  // Surface newly-arrived notes when the reader is scrolled away from the top.
+  updateNewNotesPill(col, feedEl, events, wasAtTop);
+}
+
+// A floating "N new notes" pill: when fresh notes land while the reader is scrolled
+// down, the feed doesn't yank them to the top — this pill lets them jump up on tap.
+function updateNewNotesPill(col, feedEl, events, wasAtTop) {
+  const colEl = feedEl.closest('.column');
+  if (!colEl) return;
+  const newestId = events[0]?.id;
+
+  if (wasAtTop || !col._lastTopId) {
+    col._lastTopId = newestId;
+    colEl.querySelector('.new-notes-pill')?.remove();
+    return;
+  }
+
+  const idx = events.findIndex(e => e.id === col._lastTopId);
+  const count = idx === -1 ? events.length : idx;
+  let pill = colEl.querySelector('.new-notes-pill');
+  if (count <= 0) { pill?.remove(); return; }
+
+  if (!pill) {
+    pill = document.createElement('button');
+    pill.className = 'new-notes-pill';
+    pill.onclick = () => {
+      feedEl.scrollTo({ top: 0, behavior: 'smooth' });
+      col._lastTopId = newestId;
+      pill.remove();
+    };
+    colEl.appendChild(pill);
+  }
+  pill.textContent = `${count} new note${count === 1 ? '' : 's'}`;
+
+  if (!feedEl.dataset.pillBound) {
+    feedEl.dataset.pillBound = '1';
+    feedEl.addEventListener('scroll', () => {
+      if (feedEl.scrollTop < 20) {
+        colEl.querySelector('.new-notes-pill')?.remove();
+        col._lastTopId = (col.events?.filter(e => e.kind === 1 && !isMuted(e))[0])?.id;
+      }
+    });
+  }
+}
+
+function renderNotificationFeed(col, feedEl) {
+  const notifications = (col.events ?? [])
+    .map(normalizeNotification)
+    .filter(Boolean)
+    .filter(n => !isMutedNotification(n))
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .slice(0, 500);
+  const counts = notificationCounts(notifications);
+  const activeFilter = col.notificationFilter || 'all';
+  const visible = notifications.filter(n => activeFilter === 'all' || n.type === activeFilter);
+  const scrollTop = feedEl.scrollTop;
+  const wasAtTop = scrollTop < 20;
+
+  // Keep the filter bar pinned as the first child and rebuild it in place (it
+  // has no avatars, so nothing reloads) so counts and the active filter stay
+  // fresh. Rows are then reconciled after it, the same as the note feed.
+  let header = feedEl.querySelector(':scope > .notification-filters');
+  const freshHeader = renderNotificationFilters(col, counts);
+  if (header) header.replaceWith(freshHeader);
+  else feedEl.prepend(freshHeader);
+  header = freshHeader;
+
+  feedEl.querySelector(':scope > .notification-empty')?.remove();
+
+  if (!visible.length) {
+    for (const row of feedEl.querySelectorAll(':scope > .notification-row')) row.remove();
+    const empty = document.createElement('div');
+    empty.className = 'notification-empty';
+    empty.innerHTML = notifications.length
+      ? emptyState('Nothing here', 'No notifications match this filter')
+      : emptyState('No notifications yet', 'Replies, mentions, reposts, reactions and zaps land here');
+    feedEl.appendChild(empty);
+  } else {
+    reconcileChildren(feedEl, visible, {
+      keyOf: n => n.id,
+      sigOf: n => actorProfileSignature(n.actorPubkey),
+      build: n => renderNotificationRow(n, col),
+      patch: (el, n) => updateNotificationRowProfile(el, n),
+      after: header
+    });
+  }
+
+  if (wasAtTop) feedEl.scrollTop = 0;
+  else feedEl.scrollTop = scrollTop;
+}
+
+function renderNotificationFilters(col, counts) {
+  const wrap = document.createElement('div');
+  wrap.className = 'notification-filters';
+  const filters = [
+    ['all', 'All'],
+    ['reply', 'Replies'],
+    ['mention', 'Mentions'],
+    ['zap', 'Zaps'],
+    ['repost', 'Reposts'],
+    ['reaction', 'Reactions']
+  ];
+  const active = col.notificationFilter || 'all';
+  for (const [key, label] of filters) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `notification-filter${active === key ? ' active' : ''} ${key}`;
+    btn.title = `${label} ${counts[key] ?? 0}`;
+    btn.setAttribute('aria-label', `${label} ${counts[key] ?? 0}`);
+    btn.innerHTML = `
+      <span class="notification-filter-icon">${notificationFilterIcon(key)}</span>
+      <span class="notification-filter-label">${esc(label)}</span>
+      <span class="notification-filter-count">${esc(counts[key] ?? 0)}</span>
+    `;
+    btn.addEventListener('click', () => {
+      col.notificationFilter = key;
+      saveColumns();
+      renderColumnFeed(col);
+    });
+    wrap.appendChild(btn);
+  }
+  return wrap;
+}
+
+function notificationFilterIcon(type) {
+  if (type === 'all') return iconSvg('bell');
+  if (type === 'reply') return iconSvg('reply');
+  if (type === 'mention') return iconSvg('at');
+  if (type === 'zap') return iconSvg('zap');
+  if (type === 'repost') return iconSvg('repost');
+  if (type === 'reaction') return iconSvg('heart');
+  return iconSvg('bell');
+}
+
+function notificationCounts(notifications) {
+  const counts = { all: notifications.length, reply: 0, mention: 0, zap: 0, repost: 0, reaction: 0 };
+  for (const n of notifications) counts[n.type] = (counts[n.type] ?? 0) + 1;
+  return counts;
+}
+
+function normalizeNotification(event) {
+  if (!event || !state.identity?.pubkey) return null;
+  const tags = event.tags ?? [];
+  const mentionsMe = tags.some(tag => tag[0] === 'p' && tag[1] === state.identity.pubkey);
+  if (!mentionsMe) return null;
+
+  if (event.kind === 1) {
+    const hasEventTag = tags.some(tag => tag[0] === 'e' && tag[1]);
+    return {
+      id: event.id,
+      type: hasEventTag ? 'reply' : 'mention',
+      actorPubkey: event.pubkey,
+      targetEventId: firstTagValue(event, 'e'),
+      createdAt: event.created_at,
+      contentPreview: event.content ?? '',
+      rawEvent: event
+    };
+  }
+
+  if (event.kind === 7) {
+    return { id: event.id, type: 'reaction', actorPubkey: event.pubkey, targetEventId: firstTagValue(event, 'e'), createdAt: event.created_at, reaction: event.content || '+', rawEvent: event };
+  }
+
+  if (event.kind === 6) {
+    return { id: event.id, type: 'repost', actorPubkey: event.pubkey, targetEventId: firstTagValue(event, 'e'), createdAt: event.created_at, rawEvent: event };
+  }
+
+  if (event.kind === 9735) {
+    return {
+      id: event.id,
+      type: 'zap',
+      actorPubkey: getZapSenderPubkey(event),
+      targetEventId: firstTagValue(event, 'e'),
+      createdAt: event.created_at,
+      amountSats: parseZapAmountSats(event),
+      contentPreview: parseZapComment(event),
+      rawEvent: event
+    };
+  }
+
+  return null;
+}
+
+function renderNotificationRow(notification, col) {
+  const profile = state.profiles.get(notification.actorPubkey) ?? {};
+  const name = profile.display_name || profile.displayName || profile.name || shortNpub(notification.actorPubkey);
+  const time = relativeTime(notification.createdAt);
+  const icon = notificationIcon(notification);
+  const summary = notificationSummary(notification);
+  const detail = notificationDetail(notification);
+
+  const el = document.createElement('div');
+  el.className = `notification-row ${notification.type}`;
+  el.dataset.id = notification.id;
+  el.innerHTML = `
+    <div class="notification-type">${icon}</div>
+    ${renderAvatar(profile, notification.actorPubkey, 'notification-avatar')}
+    <div class="notification-body">
+      <div class="notification-line"><strong>${esc(name)}</strong> <span>${esc(summary)}</span></div>
+      ${detail ? `<div class="notification-detail">${detail}</div>` : ''}
+    </div>
+    <div class="note-time notification-time">${esc(time)}</div>
+  `;
+  // Tapping the actor's avatar or name opens their profile, matching the feed;
+  // tapping anywhere else on the row opens the note (handler below).
+  const openActor = (event) => { event.stopPropagation(); openProfileColumn(notification.actorPubkey, name); };
+  for (const sel of ['.notification-avatar', '.notification-line > strong']) {
+    const target = el.querySelector(sel);
+    if (target) { target.style.cursor = 'pointer'; target.addEventListener('click', openActor); }
+  }
+
+  const link = notificationLink(notification);
+  if (link) {
+    el.classList.add('clickable');
+    el.title = notification.type === 'reply' || notification.type === 'mention'
+      ? 'Open conversation' : 'Open note';
+    el.addEventListener('click', (event) => {
+      if (event.target.closest('a, button')) return;
+      openConversation(link.parentId, link.selectedId, col?.id);
+    });
+  }
+  return el;
+}
+
+// Where tapping a notification takes you. Replies open the reply in its thread;
+// mentions open the mentioning note itself; reactions/reposts/zaps open the note of
+// yours they acted on. Returns null when there's no note to open (e.g. a profile zap).
+function notificationLink(n) {
+  if (n.type === 'mention') return { parentId: n.id, selectedId: n.id };
+  if (n.type === 'reply' && n.targetEventId) return { parentId: n.targetEventId, selectedId: n.id };
+  if (n.targetEventId) return { parentId: n.targetEventId, selectedId: n.targetEventId };
+  return null;
+}
+
+function notificationIcon(notification) {
+  if (notification.type === 'zap') return `${iconSvg('zap')}${notification.amountSats ? `<small>${esc(notification.amountSats)}</small>` : ''}`;
+  if (notification.type === 'reply') return iconSvg('reply');
+  if (notification.type === 'mention') return iconSvg('at');
+  if (notification.type === 'repost') return iconSvg('repost');
+  if (notification.type === 'reaction') return iconSvg('heart');
+  return iconSvg('bell');
+}
+
+function notificationSummary(notification) {
+  if (notification.type === 'zap') return notification.targetEventId ? 'zapped your note' : 'zapped you';
+  if (notification.type === 'reply') return 'replied';
+  if (notification.type === 'mention') return 'mentioned you';
+  if (notification.type === 'reaction') return 'reacted';
+  if (notification.type === 'repost') return 'reposted your note';
+  return 'notified you';
+}
+
+function notificationDetail(notification) {
+  if (notification.type === 'zap') {
+    const pieces = [];
+    if (notification.amountSats) pieces.push(`${notification.amountSats} sats`);
+    if (notification.contentPreview) pieces.push(`“${notification.contentPreview}”`);
+    return pieces.map(esc).join(' · ');
+  }
+  if (notification.type === 'reaction') return esc(notification.reaction || '+');
+  if (notification.contentPreview) return formatContent(notification.contentPreview, notification.rawEvent);
+  return '';
+}
+
+// Fingerprint of a single profile as it would be displayed (name + avatar).
+function actorProfileSignature(pubkey) {
+  const p = state.profiles.get(pubkey);
+  return `${pubkey}:${p?.display_name || p?.displayName || p?.name || ''}:${p?.picture || ''}`;
+}
+
+// A compact fingerprint of every profile a note displays (author, repost actor,
+// and p-tagged mentions/reply targets). The reconciler compares it to decide
+// whether a cached note element can be reused as-is or must be repainted because
+// a name or avatar has since loaded.
+function noteProfileSignature(event) {
+  const pubkeys = new Set([event.pubkey]);
+  const actor = getEventActorPubkey(event);
+  if (actor) pubkeys.add(actor);
+  for (const tag of event.tags ?? []) {
+    if (tag[0] === 'p' && isHex(tag[1], 64)) pubkeys.add(tag[1]);
+  }
+  let sig = '';
+  for (const pubkey of pubkeys) sig += actorProfileSignature(pubkey) + '|';
+  return sig;
+}
+
+// Reconcile a parent's keyed children in place instead of wiping innerHTML.
+// Nodes whose id and signature are unchanged are reused untouched — which is
+// what keeps their avatar <img> elements alive so they never re-fetch and
+// strobe. When a row's signature changes (a name or avatar finally loaded) it is
+// updated in place via `patch` if one is given — so the element, its avatar
+// <img>, and its :hover state all survive — and only fully rebuilt when no patch
+// is supplied. New rows are inserted in order and departed ones removed. `after`
+// is an optional fixed leading child (a header or label) the rows stay after.
+function reconcileChildren(parent, items, { keyOf, sigOf, build, patch = null, after = null }) {
+  const keep = new Set(items.map(item => String(keyOf(item))));
+  const existing = new Map();
+  const replyBoxes = new Map();
+  let node = after ? after.nextSibling : parent.firstChild;
+  while (node) {
+    const next = node.nextSibling;
+    if (node.classList?.contains('reply-box') && node.dataset?.replyFor) {
+      if (keep.has(node.dataset.replyFor)) replyBoxes.set(node.dataset.replyFor, node);
+      else node.remove();
+    }
+    else if (node.dataset?.id != null) existing.set(node.dataset.id, node);
+    else node.remove(); // stray nodes (e.g. a prior empty-state)
+    node = next;
+  }
+  for (const [id, el] of existing) {
+    if (!keep.has(id)) {
+      el.remove();
+      replyBoxes.get(id)?.remove();
+      replyBoxes.delete(id);
+      existing.delete(id);
+    }
+  }
+  let prev = after;
+  for (const item of items) {
+    const id = String(keyOf(item));
+    const sig = sigOf(item);
+    let el = existing.get(id);
+    if (!el) {
+      el = build(item);
+      el.dataset.id = id;
+      el.dataset.sig = sig;
+    } else if (el.dataset.sig !== sig) {
+      if (patch) {
+        patch(el, item);
+      } else {
+        const fresh = build(item);
+        fresh.dataset.id = id;
+        el.replaceWith(fresh);
+        el = fresh;
+      }
+      el.dataset.sig = sig;
+    }
+    const ref = prev ? prev.nextSibling : parent.firstChild;
+    if (ref !== el) parent.insertBefore(el, ref);
+    const replyBox = replyBoxes.get(id);
+    if (replyBox) {
+      if (el.nextSibling !== replyBox) parent.insertBefore(replyBox, el.nextSibling);
+      prev = replyBox;
+    } else {
+      prev = el;
+    }
+  }
+}
+
+// Swap an avatar's <img> only when the picture URL actually changed, so a note
+// whose profile updated (e.g. just its name) never reloads an unchanged avatar.
+function updateAvatarEl(wrap, profile, pubkey) {
+  if (!wrap) return;
+  const newSrc = profile?.picture || '';
+  const img = wrap.querySelector('img');
+  const curSrc = img ? (img.getAttribute('src') || '') : '';
+  if (newSrc === curSrc) return;
+  wrap.innerHTML = newSrc
+    ? `<img src="${esc(newSrc)}" data-pubkey="${esc(pubkey)}" loading="lazy" onerror="handleAvatarImageError(this)" />`
+    : '';
+}
+
+// Update the profile-dependent bits of an existing note (author name, avatar,
+// and the "Replying to …" cue) in place, without rebuilding the element.
+function updateNoteProfile(el, event) {
+  const profile = state.profiles.get(event.pubkey) ?? {};
+  const name = profile.display_name || profile.displayName || profile.name || shortNpub(event.pubkey);
+  const authorEl = el.querySelector(':scope > .note-header > .note-meta > .note-author');
+  if (authorEl) authorEl.textContent = name;
+  updateAvatarEl(el.querySelector(':scope > .note-header > .note-avatar'), profile, event.pubkey);
+
+  const rc = el.querySelector(':scope > .reply-context');
+  if (rc) {
+    const parentRef = getReplyParentRef(event);
+    const parent = parentRef?.eventId ? state.notes.get(parentRef.eventId) : null;
+    if (parent) {
+      const pProfile = state.profiles.get(parent.pubkey) ?? {};
+      const pName = pProfile.display_name || pProfile.displayName || pProfile.name || shortNpub(parent.pubkey);
+      const span = rc.querySelector('span');
+      if (span) span.textContent = `Replying to ${pName}`;
+      rc.classList.remove('loading');
+    }
+  }
+}
+
+// Same, for a notification row (actor name + avatar).
+function updateNotificationRowProfile(el, notification) {
+  const profile = state.profiles.get(notification.actorPubkey) ?? {};
+  const name = profile.display_name || profile.displayName || profile.name || shortNpub(notification.actorPubkey);
+  const strong = el.querySelector('.notification-line > strong');
+  if (strong) strong.textContent = name;
+  updateAvatarEl(el.querySelector(':scope > .notification-avatar'), profile, notification.actorPubkey);
+}
+
+function renderNote(event, opts = {}) {
+  const profile = state.profiles.get(event.pubkey) ?? {};
+  const name = profile.display_name || profile.displayName || profile.name || shortNpub(event.pubkey);
+  const npub = shortNpub(event.pubkey);
+  const time = relativeTime(event.created_at);
+  const content = formatContent(event.content, event);
+  // In a thread the chain already shows the parent above, so the inline
+  // "replying to" line is redundant there.
+  const replyContext = opts.thread ? '' : renderReplyContext(event);
+
+  const el = document.createElement('div');
+  el.className = `note${opts.thread ? ' thread-note' : ''}${opts.selected ? ' thread-selected' : ''}${opts.reply ? ' thread-reply' : ''}`;
+  el.dataset.id = event.id;
+  // Records which profile data this note was painted with so renderColumnFeed
+  // can tell when a reuse is safe vs. when an avatar/name actually changed.
+  el.dataset.sig = noteProfileSignature(event);
+  el.innerHTML = `
+    ${replyContext}
+    <div class="note-header">
+      ${renderAvatar(profile, event.pubkey)}
+      <div class="note-meta">
+        <div class="note-author">${esc(name)}</div>
+        <div class="note-npub">${esc(npub)}</div>
+      </div>
+      <div class="note-time" data-ts="${event.created_at}">${esc(time)}</div>
+    </div>
+    <div class="note-content">${content}</div>
+    <div class="note-actions">
+      <button class="note-action" data-action="reply" title="Reply">${iconSvg('reply')}<span>${replyCountLabel(event.id)}</span></button>
+      <button class="note-action" data-action="repost" title="Repost">${iconSvg('repost')}<span>${repostCountLabel(event.id)}</span></button>
+      <button class="note-action" data-action="quote" title="Quote">${iconSvg('pen')}<span></span></button>
+      <button class="note-action${state.liked.has(event.id) ? ' liked' : ''}" data-action="like" title="Like">${iconSvg('heart')}<span>${reactionCountLabel(event.id)}</span></button>
+      <button class="note-action" data-action="mute-thread" title="Mute thread">${iconSvg('volume-x')}<span></span></button>
+    </div>
+  `;
+
+  el.querySelector('[data-action="reply"]').onclick = () => toggleReply(el, event);
+  el.querySelector('[data-action="repost"]').onclick = () => doRepost(event);
+  el.querySelector('[data-action="quote"]').onclick = () => quoteNote(event);
+  el.querySelector('[data-action="like"]').onclick = (e) => doLike(event, e.currentTarget);
+  el.querySelector('[data-action="mute-thread"]').onclick = () => muteThread(event);
+
+  // Tapping a name or avatar opens that person's profile column (not the thread).
+  const openAuthor = (clickEvent) => {
+    clickEvent.stopPropagation();
+    openProfileColumn(event.pubkey, name);
+  };
+  for (const sel of ['.note-author', '.note-avatar']) {
+    const target = el.querySelector(sel);
+    if (target) { target.style.cursor = 'pointer'; target.addEventListener('click', openAuthor); }
+  }
+  const parentRef = getReplyParentRef(event);
+  el.querySelector('.reply-context')?.addEventListener('click', (clickEvent) => {
+    clickEvent.preventDefault();
+    if (parentRef?.eventId) openConversation(parentRef.eventId, event.id, el.closest('.column')?.dataset.col);
+  });
+
+  // Tap anywhere on a note (outside links/buttons) to open its thread, the way
+  // Damus/Nostur do. Ignore taps that are really text selections.
+  if (!opts.thread) {
+    el.addEventListener('click', (clickEvent) => {
+      if (clickEvent.target.closest('a, button')) return;
+      if (window.getSelection && String(window.getSelection())) return;
+      openConversation(event.id, event.id, el.closest('.column')?.dataset.col);
+    });
+  }
+
+  return el;
+}
+
+function renderReplyContext(event) {
+  const parentRef = getReplyParentRef(event);
+  if (!parentRef?.eventId || parentRef.eventId === event.id) return '';
+  const parent = state.notes.get(parentRef.eventId);
+  if (!parent) {
+    fetchEmbeddedEvent(parentRef.eventId, parentRef.relays);
+    return `
+      <button class="reply-context loading" type="button" data-parent-id="${esc(parentRef.eventId)}" data-selected-id="${esc(event.id)}" title="Open conversation">
+        ${iconSvg('reply')}<span>Replying to a note</span>
+      </button>
+    `;
+  }
+
+  const profile = state.profiles.get(parent.pubkey) ?? {};
+  if (profileNeedsRefresh(parent.pubkey)) queueProfileFetch(parent.pubkey);
+  const name = profile.display_name || profile.displayName || profile.name || shortNpub(parent.pubkey);
+  return `
+    <button class="reply-context" type="button" data-parent-id="${esc(parent.id)}" data-selected-id="${esc(event.id)}" title="Open conversation">
+      ${iconSvg('reply')}<span>Replying to ${esc(name)}</span>
+    </button>
+  `;
+}
+
+// Threads open in-place inside the column the note was clicked in, with a back
+// arrow in the header — navigation, not a popup dialog.
+function openConversation(parentId, selectedId = parentId, columnId = null) {
+  const col = columnId ? state.columns.find(c => c.id === columnId) : null;
+  if (!col) return;
+  if (parentId && !state.notes.has(parentId)) fetchEmbeddedEvent(parentId);
+  if (selectedId && !state.notes.has(selectedId)) fetchEmbeddedEvent(selectedId);
+  col.thread = { parentId, selectedId };
+  closeMobileMenu();
+  updateColumnHeader(col);
+  fetchThreadReplies(col, selectedId || parentId);
+  renderThread(col, undefined, true);
+}
+
+function closeThread(col) {
+  col.thread = null;
+  unsubscribe(`thread_replies_${col.id}`);
+  updateColumnHeader(col);
+  renderColumnFeed(col);
+}
+
+// Live-fetch direct replies to the focused note so they render under it.
+function fetchThreadReplies(col, noteId) {
+  if (!noteId) return;
+  const subId = `thread_replies_${col.id}`;
+  unsubscribe(subId);
+  const filter = { kinds: [1], '#e': [noteId] };
+  state.subs.set(subId, { filters: [filter], columnId: col.id, threadReplies: true, allRelays: true });
+  const sockets = [...state.sockets.values()].filter(ws => ws.readyState === WebSocket.OPEN);
+  for (const ws of sockets) ws.send(JSON.stringify(['REQ', subId, filter]));
+}
+
+// Notes already in cache whose computed reply parent is this note (NIP-10).
+function threadRepliesFor(noteId) {
+  const out = [];
+  for (const ev of state.notes.values()) {
+    if (ev.kind !== 1 || ev.id === noteId || isMuted(ev)) continue;
+    if (getReplyParentRef(ev)?.eventId === noteId) out.push(ev);
+  }
+  return out.sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0));
+}
+
+const threadRerenderTimers = new Map();
+function scheduleThreadRerender(col) {
+  if (!col?.id) return;
+  clearTimeout(threadRerenderTimers.get(col.id));
+  threadRerenderTimers.set(col.id, setTimeout(() => {
+    threadRerenderTimers.delete(col.id);
+    if (col.thread) renderColumnFeed(col);
+  }, 300));
+}
+
+function renderThread(col, feedEl = document.querySelector(`[data-col="${col.id}"] .column-feed`), scrollToTarget = false) {
+  if (!feedEl || !col.thread) return;
+  const { parentId, selectedId } = col.thread;
+  const focusedId = selectedId || parentId;
+  const chain = buildConversationChain(focusedId, parentId);
+  const replies = threadRepliesFor(focusedId);
+  const prevScroll = feedEl.scrollTop;
+
+  // Build the thread skeleton once, then reconcile its two lists in place so
+  // avatars survive the repaints that fire as replies and profiles stream in.
+  // Reuse it across renders; if the column was showing something else, the stray
+  // nodes are cleared and the skeleton rebuilt.
+  let wrap = feedEl.querySelector(':scope > .thread');
+  let chainEl, repliesEl, label;
+  if (!wrap) {
+    feedEl.innerHTML = '';
+    wrap = document.createElement('div');
+    wrap.className = 'thread';
+    chainEl = document.createElement('div');
+    chainEl.className = 'thread-chain';
+    repliesEl = document.createElement('div');
+    repliesEl.className = 'thread-replies';
+    label = document.createElement('div');
+    label.className = 'thread-replies-label';
+    repliesEl.appendChild(label);
+    wrap.appendChild(chainEl);
+    wrap.appendChild(repliesEl);
+    feedEl.appendChild(wrap);
+  } else {
+    chainEl = wrap.querySelector(':scope > .thread-chain');
+    repliesEl = wrap.querySelector(':scope > .thread-replies');
+    label = repliesEl.querySelector(':scope > .thread-replies-label');
+  }
+
+  // Ancestor chain (root → focused), connected by the thread line. The selected
+  // state is folded into the signature so refocusing repaints the right note.
+  reconcileChildren(chainEl, chain, {
+    keyOf: item => item.id,
+    sigOf: item => (item.id === selectedId ? 'sel:' : '') + (item.event ? noteProfileSignature(item.event) : 'missing'),
+    build: item => renderThreadNote(item, selectedId)
+  });
+
+  // Direct replies to the focused note, listed below.
+  label.textContent = replies.length
+    ? (replies.length === 1 ? '1 reply' : `${replies.length} replies`)
+    : 'No replies yet';
+  reconcileChildren(repliesEl, replies, {
+    keyOf: r => r.id,
+    sigOf: r => noteProfileSignature(r),
+    build: r => renderNote(r, { thread: true, reply: true }),
+    patch: (el, r) => updateNoteProfile(el, r),
+    after: label
+  });
+
+  if (scrollToTarget) {
+    const targetId = selectedId || parentId;
+    setTimeout(() => {
+      const escapedId = window.CSS?.escape ? CSS.escape(targetId) : targetId;
+      wrap.querySelector(`[data-id="${escapedId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 0);
+  } else {
+    feedEl.scrollTop = prevScroll;
+  }
+}
+
+function renderThreadNote(item, selectedId) {
+  if (!item.event) {
+    fetchEmbeddedEvent(item.id);
+    const ph = document.createElement('div');
+    ph.className = 'note thread-note thread-missing';
+    ph.dataset.id = item.id;
+    ph.innerHTML = `<span>Loading note from relays…</span>`;
+    return ph;
+  }
+  return renderNote(item.event, { thread: true, selected: item.id === selectedId });
+}
+
+function buildConversationChain(selectedId, fallbackParentId) {
+  const ids = [];
+  const seen = new Set();
+  let currentId = selectedId || fallbackParentId;
+  while (currentId && !seen.has(currentId) && ids.length < 12) {
+    seen.add(currentId);
+    ids.unshift(currentId);
+    const event = state.notes.get(currentId);
+    if (!event) break;
+    const parentRef = getReplyParentRef(event);
+    if (!parentRef?.eventId || parentRef.eventId === currentId) break;
+    fetchEmbeddedEvent(parentRef.eventId, parentRef.relays);
+    currentId = parentRef.eventId;
+  }
+  if (fallbackParentId && !seen.has(fallbackParentId)) ids.unshift(fallbackParentId);
+  return ids.map(id => ({ id, event: state.notes.get(id) }));
+}
+
+
+function getReplyParentRef(event) {
+  const eTags = (event?.tags ?? []).filter(tag => tag[0] === 'e' && isHex(tag[1], 64));
+  if (!eTags.length) return null;
+  const replyTag = eTags.find(tag => tag[3] === 'reply');
+  const parentTag = replyTag ?? eTags[eTags.length - 1];
+  return { eventId: parentTag[1], relays: parentTag[2] ? [parentTag[2]] : [] };
+}
+
+function renderAvatar(profile, pubkey, extraClass = '') {
+  const followClass = isFollowing(pubkey) ? ' following' : '';
+  const classes = `note-avatar${extraClass ? ` ${extraClass}` : ''}${followClass}`;
+  const image = profile?.picture
+    ? `<img src="${esc(profile.picture)}" data-pubkey="${esc(pubkey)}" loading="lazy" onerror="handleAvatarImageError(this)" />`
+    : '';
+  return `<div class="${classes}" data-pubkey="${esc(pubkey)}">${image}</div>`;
+}
+
+// -- interactions --
+function toggleReply(noteEl, event) {
+  const parent = noteEl.parentElement;
+  const escapedId = window.CSS?.escape ? CSS.escape(event.id) : event.id;
+  const existing = parent?.querySelector(`:scope > .reply-box[data-reply-for="${escapedId}"]`);
+  if (existing) { existing.remove(); return; }
+
+  const box = document.createElement('div');
+  box.className = 'reply-box';
+  box.dataset.replyFor = event.id;
+  box.innerHTML = `
+    <textarea placeholder="Reply..."></textarea>
+    <div class="reply-media-status compose-media-status hidden" role="status" aria-live="polite"></div>
+    <div class="reply-actions">
+      <input class="reply-media-input compose-media-input" type="file" accept="image/*" hidden aria-hidden="true" tabindex="-1" />
+      <button class="btn btn-ghost btn-sm compose-media-btn reply-media-btn" type="button" title="Insert photo" aria-label="Insert photo from this device">
+        <span class="compose-media-icon" aria-hidden="true"></span>
+        <span class="compose-media-text">Photo</span>
+      </button>
+      <button class="btn btn-ghost btn-sm">Cancel</button>
+      <button class="btn btn-primary btn-sm">Reply</button>
+    </div>
+  `;
+  const textarea = box.querySelector('textarea');
+  const mediaInput = box.querySelector('.reply-media-input');
+  const mediaBtn = box.querySelector('.reply-media-btn');
+  const mediaStatus = box.querySelector('.reply-media-status');
+  const cancelBtn = box.querySelectorAll('button')[1];
+  const sendBtn = box.querySelectorAll('button')[2];
+  let mediaUploadInFlight = false;
+  mediaBtn.querySelector('.compose-media-icon').innerHTML = iconSvg('image');
+  mediaBtn.onclick = () => {
+    if (mediaUploadInFlight) return;
+    mediaInput.click();
+  };
+  mediaInput.onchange = async () => {
+    if (mediaUploadInFlight) return;
+    const file = mediaInput.files?.[0];
+    mediaInput.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setInlineMediaStatus(mediaBtn, mediaStatus, 'Images only', true);
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setInlineMediaStatus(mediaBtn, mediaStatus, 'Too large', true, 'Images must be under 20 MB.');
+      setTimeout(() => setInlineMediaStatus(mediaBtn, mediaStatus, 'Photo', false, ''), 2600);
+      return;
+    }
+    mediaUploadInFlight = true;
+    mediaBtn.disabled = true;
+    mediaInput.disabled = true;
+    setInlineMediaStatus(mediaBtn, mediaStatus, 'Uploading...', false, 'Uploading image to nostr.build...');
+    try {
+      const url = await uploadComposeMedia(file);
+      appendMediaUrlToTextarea(textarea, url);
+      setInlineMediaStatus(mediaBtn, mediaStatus, 'Added', false, `Uploaded: ${url}`, url);
+      setTimeout(() => setInlineMediaStatus(mediaBtn, mediaStatus, 'Photo', false, ''), 1500);
+    } catch (err) {
+      console.error('Reply media upload failed:', err);
+      setInlineMediaStatus(mediaBtn, mediaStatus, 'Failed', true, err.message || 'Upload failed');
+      setTimeout(() => setInlineMediaStatus(mediaBtn, mediaStatus, 'Photo', false, ''), 2200);
+    } finally {
+      mediaUploadInFlight = false;
+      mediaBtn.disabled = false;
+      mediaInput.disabled = false;
+    }
+  };
+  cancelBtn.onclick = () => box.remove();
+  sendBtn.onclick = async () => {
+    const text = textarea.value.trim();
+    if (!text) return;
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending...';
+    try {
+      await publishEvent(1, text, [
+        ['e', event.id, '', 'root'],
+        ['p', event.pubkey]
+      ]);
+      box.remove();
+    } catch (err) {
+      sendBtn.textContent = 'Failed';
+      setTimeout(() => { sendBtn.textContent = 'Reply'; sendBtn.disabled = false; }, 2000);
+    }
+  };
+  noteEl.after(box);
+  textarea.focus();
+}
+
+async function doRepost(event) {
+  try {
+    await publishEvent(6, JSON.stringify(event), [
+      ['e', event.id, ''],
+      ['p', event.pubkey]
+    ]);
+    toast('Reposted', 'success');
+  } catch (err) {
+    console.error('Repost failed:', err);
+    toast('Repost failed', 'error');
+  }
+}
+
+// Quote-repost: open the composer prefilled with a nostr: reference to the note.
+// mentionTagsFromContent turns that reference into a NIP-18 `q` tag on publish.
+function quoteNote(event) {
+  openCompose();
+  const ref = `nostr:${encodeNote(event.id)}`;
+  composeText.value = composeText.value.trim() ? `${composeText.value}\n\n${ref}` : `\n\n${ref}`;
+  composeText.dispatchEvent(new Event('input'));
+  composeText.focus();
+  composeText.setSelectionRange(0, 0);
+}
+
+async function doLike(event, btn) {
+  // Already liked -> undo by deleting our reaction (NIP-09 kind:5).
+  if (state.liked.has(event.id)) {
+    const reactionId = state.likeEvents.get(event.id);
+    btn.classList.remove('liked');
+    state.liked.delete(event.id);
+    state.likeEvents.delete(event.id);
+    persistLiked();
+    if (!reactionId) { toast('Like removed', 'success'); return; }
+    try {
+      await publishEvent(5, '', [['e', reactionId]]);
+      toast('Like removed', 'success');
+    } catch (err) {
+      console.error('Unlike failed:', err);
+      toast('Could not remove like', 'error');
+    }
+    return;
+  }
+  // Optimistic like.
+  btn.classList.add('liked');
+  state.liked.add(event.id);
+  persistLiked();
+  try {
+    const { event: reaction } = await publishEvent(7, '+', [
+      ['e', event.id],
+      ['p', event.pubkey]
+    ]);
+    if (reaction?.id) state.likeEvents.set(event.id, reaction.id);
+  } catch (err) {
+    btn.classList.remove('liked');
+    state.liked.delete(event.id);
+    persistLiked();
+    console.error('Like failed:', err);
+    toast('Like failed', 'error');
+  }
+}
+
+async function publishEvent(kind, content, tags = []) {
+  const createdAt = Math.floor(Date.now() / 1000);
+  const { event } = await api('/api/v1/idenstr/sign', {
+    method: 'POST',
+    body: { kind, created_at: createdAt, content, tags }
+  });
+  const results = await publishSignedEvent(event);
+  return { event, results };
+}
+
+function publishSignedEvent(event) {
+  const writeRelays = new Set(state.relays.write ?? []);
+  if (state.config?.privateRelayUrl) writeRelays.delete(state.config.privateRelayUrl);
+  const targets = [...writeRelays]
+    .map(url => state.sockets.get(url))
+    .filter(ws => ws?.readyState === WebSocket.OPEN);
+  if (!targets.length) throw new Error('No configured write relays are connected. Idenstr signed and vaulted the event, but Feedstr could not broadcast it.');
+  return Promise.all(targets.map(ws => publishToRelay(ws, event)));
+}
+
+function publishToRelay(ws, event) {
+  const relay = [...state.sockets.entries()].find(([, socket]) => socket === ws)?.[0] ?? 'relay';
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve({ relay, accepted: false, message: 'timeout' });
+    }, 5000);
+    const handler = (msg) => {
+      try {
+        const data = JSON.parse(msg.data);
+        if (data[0] !== 'OK' || data[1] !== event.id) return;
+        cleanup();
+        resolve({ relay, accepted: Boolean(data[2]), message: data[3] ?? '' });
+      } catch {}
+    };
+    function cleanup() {
+      clearTimeout(timeout);
+      ws.removeEventListener('message', handler);
+    }
+    ws.addEventListener('message', handler);
+    ws.send(JSON.stringify(['EVENT', event]));
+  });
+}
+
+// -- compose --
+const composeText = document.getElementById('compose-text');
+const composeSend = document.getElementById('compose-send');
+const composeMediaInput = document.getElementById('compose-media-input');
+const composeMediaBtn = document.getElementById('compose-media-btn');
+const composeMediaStatus = document.getElementById('compose-media-status');
+const composeMentionSuggest = document.getElementById('compose-mention-suggest');
+const composeMentionState = { open: false, query: '', start: -1, end: -1, selected: 0, matches: [] };
+let composeMediaUploadInFlight = false;
+composeMediaBtn.querySelector('.compose-media-icon').innerHTML = iconSvg('image');
+
+// -- compose modal (opened from the sidebar button or the mobile FAB) --
+const composeModal = document.getElementById('compose-modal');
+const composeOpenBtn = document.getElementById('compose-open-btn');
+const composeFab = document.getElementById('compose-fab');
+const composeCloseBtn = document.getElementById('compose-close-btn');
+composeOpenBtn.querySelector('.compose-open-icon').innerHTML = iconSvg('pen');
+composeFab.querySelector('.compose-fab-icon').innerHTML = iconSvg('pen');
+composeCloseBtn.innerHTML = iconSvg('x');
+
+function openCompose() {
+  closeMobileMenu();
+  composeModal.classList.add('open');
+  // Let the modal paint before focusing so iOS reliably raises the keyboard.
+  requestAnimationFrame(() => composeText.focus());
+}
+
+function closeCompose() {
+  composeModal.classList.remove('open');
+  hideComposeMentionSuggestions();
+}
+
+composeOpenBtn.onclick = openCompose;
+composeFab.onclick = openCompose;
+composeCloseBtn.onclick = closeCompose;
+composeModal.onclick = (e) => { if (e.target === composeModal) closeCompose(); };
+// Cmd/Ctrl+Enter posts from anywhere in the textarea.
+composeText.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !composeSend.disabled) {
+    e.preventDefault();
+    composeSend.click();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  // Let Escape close the mention popover first; only then the compose modal.
+  if (composeModal.classList.contains('open')) {
+    if (!composeMentionState.open) closeCompose();
+    return;
+  }
+  // Otherwise close the add-column / settings modal if it's open.
+  if (modal.classList.contains('open')) closeModal();
+});
+
+// Relative timestamps go stale ("5m" forever); re-stamp every minute.
+setInterval(() => {
+  document.querySelectorAll('.note-time[data-ts]').forEach(el => {
+    el.textContent = relativeTime(Number(el.dataset.ts));
+  });
+}, 60000);
+
+composeText.addEventListener('input', () => {
+  composeSend.disabled = !composeText.value.trim();
+  syncComposeMentions();
+  updateComposeMentionSuggestions();
+});
+composeText.addEventListener('click', updateComposeMentionSuggestions);
+composeText.addEventListener('keydown', handleComposeMentionKeydown);
+composeText.addEventListener('blur', () => setTimeout(hideComposeMentionSuggestions, 120));
+composeMediaBtn.addEventListener('click', () => {
+  if (composeMediaUploadInFlight) return;
+  composeMediaInput.click();
+});
+composeMediaInput.addEventListener('change', handleComposeMediaChange);
+
+async function handleComposeMediaChange() {
+  if (composeMediaUploadInFlight) return;
+  const file = composeMediaInput.files?.[0];
+  composeMediaInput.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    setComposeMediaStatus('Images only', true);
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    setComposeMediaStatus('Too large', true);
+    setTimeout(() => setComposeMediaStatus('Photo', false), 2600);
+    return;
+  }
+  composeMediaUploadInFlight = true;
+  composeMediaBtn.disabled = true;
+  composeMediaInput.disabled = true;
+  setComposeMediaStatus('Uploading...', false);
+  showComposeMediaMessage('Uploading image to nostr.build...', false);
+  try {
+    const url = await uploadComposeMedia(file);
+    appendComposeMediaUrl(url);
+    composeText.dispatchEvent(new Event('input'));
+    setComposeMediaStatus('Added', false);
+    showComposeMediaMessage(`Uploaded: ${url}`, false, url);
+    setTimeout(() => setComposeMediaStatus('Photo', false), 1500);
+  } catch (err) {
+    console.error('Media upload failed:', err);
+    setComposeMediaStatus('Failed', true);
+    showComposeMediaMessage(err.message || 'Upload failed', true);
+    setTimeout(() => setComposeMediaStatus('Photo', false), 2200);
+  } finally {
+    composeMediaUploadInFlight = false;
+    composeMediaBtn.disabled = false;
+    composeMediaInput.disabled = false;
+  }
+}
+
+async function uploadComposeMedia(file) {
+  const form = new FormData();
+  form.append('file', file, file.name || 'feedstr-image.jpg');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 90000);
+  let res;
+  try {
+    res = await fetch('/api/v1/media/upload', { method: 'POST', body: form, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('Upload timed out. Try a smaller image or a different file.');
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+  let body = null;
+  try { body = await res.json(); } catch {}
+  if (!res.ok) throw new Error(body?.message || body?.error || `${res.status} ${res.statusText}`);
+  const url = body?.url || body?.urls?.[0];
+  if (!url) throw new Error('Upload finished without a media URL');
+  return url;
+}
+
+function appendComposeMediaUrl(url) {
+  appendMediaUrlToTextarea(composeText, url);
+}
+
+function setComposeMediaStatus(label, failed) {
+  composeMediaBtn.classList.toggle('error', Boolean(failed));
+  composeMediaBtn.querySelector('.compose-media-text').textContent = label;
+}
+
+function appendMediaUrlToTextarea(textarea, url) {
+  const before = textarea.value;
+  try {
+    insertAtCursor(textarea, url);
+  } catch (err) {
+    const spacer = before.trim() ? '\n' : '';
+    textarea.value = `${before}${spacer}${url}`;
+  }
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  textarea.focus();
+}
+
+function setInlineMediaStatus(button, statusEl, label, failed, message = '', url = '') {
+  button.classList.toggle('error', Boolean(failed));
+  button.querySelector('.compose-media-text').textContent = label;
+  if (!statusEl) return;
+  statusEl.classList.toggle('hidden', !message);
+  statusEl.classList.toggle('error', Boolean(failed));
+  statusEl.innerHTML = url
+    ? `<span>${esc(message.replace(url, '').trim())}</span> <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`
+    : esc(message);
+}
+
+function showComposeMediaMessage(message, failed, url = '') {
+  if (!composeMediaStatus) return;
+  composeMediaStatus.classList.toggle('hidden', !message);
+  composeMediaStatus.classList.toggle('error', Boolean(failed));
+  composeMediaStatus.innerHTML = url
+    ? `<span>${esc(message.replace(url, '').trim())}</span> <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`
+    : esc(message);
+}
+
+function renderComposeMentionPicker() {
+  // Kept as the boot-time hook: suggestions are rendered on demand from state.following.
+  hideComposeMentionSuggestions();
+}
+
+function buildComposeMentionIndex() {
+  state.composeMentionIndex = state.following
+    .filter(f => f.pubkey)
+    .map(f => {
+      const label = mentionDisplayName(f.pubkey, f);
+      const search = `${label} ${f.petname ?? ''} ${f.name ?? ''} ${f.pubkey}`.toLowerCase();
+      return { pubkey: f.pubkey, label, petname: f.petname ?? '', picture: f.picture ?? '', search };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function getComposeMentionTrigger() {
+  const cursor = composeText.selectionStart ?? composeText.value.length;
+  const before = composeText.value.slice(0, cursor);
+  const match = before.match(/(^|\s)@([\p{L}\p{N}_.-]*)$/u);
+  if (!match) return null;
+  const atIndex = cursor - match[2].length - 1;
+  return { start: atIndex, end: cursor, query: match[2] };
+}
+
+function updateComposeMentionSuggestions() {
+  const trigger = getComposeMentionTrigger();
+  if (!trigger) return hideComposeMentionSuggestions();
+  const query = trigger.query.toLowerCase();
+  const follows = state.composeMentionIndex
+    .filter(f => !query || f.search.includes(query))
+    .slice(0, 8);
+  composeMentionState.open = true;
+  composeMentionState.query = trigger.query;
+  composeMentionState.start = trigger.start;
+  composeMentionState.end = trigger.end;
+  composeMentionState.selected = Math.min(composeMentionState.selected, Math.max(0, follows.length - 1));
+  composeMentionState.matches = follows;
+  renderComposeMentionSuggestions();
+}
+
+function renderComposeMentionSuggestions() {
+  if (!composeMentionSuggest) return;
+  if (!composeMentionState.open) return hideComposeMentionSuggestions();
+  const matches = composeMentionState.matches;
+  composeMentionSuggest.classList.remove('hidden');
+  composeMentionSuggest.innerHTML = matches.length
+    ? matches.map((follow, index) => renderComposeMentionOption(follow, index)).join('')
+    : '<div class="mention-suggest-empty">No matching follows</div>';
+  composeMentionSuggest.querySelectorAll('.mention-suggest-option').forEach((button, index) => {
+    button.addEventListener('mousedown', (event) => event.preventDefault());
+    button.addEventListener('click', () => selectComposeMention(index));
+  });
+}
+
+function renderComposeMentionOption(follow, index) {
+  const profile = state.profiles.get(follow.pubkey) ?? follow;
+  const active = index === composeMentionState.selected;
+  const label = follow.label;
+  const secondary = follow.petname && follow.petname !== label ? follow.petname : shortNpub(follow.pubkey);
+  return `
+    <button class="mention-suggest-option${active ? ' active' : ''}" type="button" role="option" aria-selected="${active}" data-index="${index}">
+      ${renderAvatar(profile, follow.pubkey, 'mention-suggest-avatar')}
+      <span><strong>${esc(label)}</strong><small>${esc(secondary)}</small></span>
+    </button>
+  `;
+}
+
+function handleComposeMentionKeydown(event) {
+  if (!composeMentionState.open) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    hideComposeMentionSuggestions();
+    return;
+  }
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const count = composeMentionState.matches.length;
+    if (!count) return;
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    composeMentionState.selected = (composeMentionState.selected + delta + count) % count;
+    renderComposeMentionSuggestions();
+    return;
+  }
+  if ((event.key === 'Enter' || event.key === 'Tab') && composeMentionState.matches.length) {
+    event.preventDefault();
+    selectComposeMention(composeMentionState.selected);
+  }
+}
+
+function selectComposeMention(index = 0) {
+  const follow = composeMentionState.matches[index];
+  if (!follow) return;
+  // Insert a readable @Name (not a raw nostr:nprofile blob) and remember the
+  // pubkey behind it. The token is resolved to a nostr:nprofile ref + p-tag only
+  // at publish time, so the writer always sees a clean name.
+  const label = mentionDisplayName(follow.pubkey, follow);
+  const token = mentionToken(label);
+  replaceComposeRange(composeMentionState.start, composeMentionState.end, `${token} `);
+  if (!state.composeMentions.some(m => m.pubkey === follow.pubkey)) {
+    const profile = state.profiles.get(follow.pubkey) ?? follow;
+    state.composeMentions.push({ token, pubkey: follow.pubkey, label, profile });
+  }
+  renderComposeTags();
+  hideComposeMentionSuggestions();
+  composeText.focus();
+  composeText.dispatchEvent(new Event('input'));
+}
+
+// A mention reads as "@Display Name" in the box; we track the pubkey separately
+// so spaces in names are fine.
+function mentionToken(label) {
+  return `@${label}`;
+}
+
+// Keep the tag chips in sync with what is actually written: drop any tracked
+// mention whose @token the user has edited or deleted out of the text.
+function syncComposeMentions() {
+  const text = composeText.value;
+  state.composeMentions = state.composeMentions.filter(m => text.includes(m.token));
+  renderComposeTags();
+}
+
+function renderComposeTags() {
+  const wrap = document.getElementById('compose-tags');
+  if (!wrap) return;
+  const mentions = state.composeMentions;
+  if (!mentions.length) {
+    wrap.classList.add('hidden');
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = `<span class="compose-tags-label">Tagging</span>` + mentions.map((m, i) => `
+    <span class="compose-tag" data-index="${i}">
+      ${renderAvatar(state.profiles.get(m.pubkey) ?? m.profile, m.pubkey, 'compose-tag-avatar')}
+      <span class="compose-tag-name">${esc(m.label)}</span>
+      <button class="compose-tag-remove" type="button" data-index="${i}" title="Remove" aria-label="Remove ${esc(m.label)}">${iconSvg('x')}</button>
+    </span>`).join('');
+  wrap.querySelectorAll('.compose-tag-remove').forEach(btn => {
+    btn.addEventListener('click', () => removeComposeMention(Number(btn.dataset.index)));
+  });
+}
+
+function removeComposeMention(index) {
+  const mention = state.composeMentions[index];
+  if (!mention) return;
+  state.composeMentions.splice(index, 1);
+  // Strip the @token (and a trailing space) from the text so the box matches.
+  composeText.value = composeText.value.replace(`${mention.token} `, '').replace(mention.token, '');
+  composeSend.disabled = !composeText.value.trim();
+  renderComposeTags();
+  composeText.focus();
+}
+
+function hideComposeMentionSuggestions() {
+  composeMentionState.open = false;
+  composeMentionState.matches = [];
+  composeMentionState.selected = 0;
+  composeMentionSuggest?.classList.add('hidden');
+}
+
+function mentionDisplayName(pubkey, fallback = {}) {
+  const profile = state.profiles.get(pubkey) ?? fallback;
+  return profile.display_name || profile.displayName || profile.name || profile.petname || shortNpub(pubkey);
+}
+
+function replaceComposeRange(start, end, text) {
+  const prefix = composeText.value.slice(0, start);
+  const suffix = composeText.value.slice(end);
+  composeText.value = `${prefix}${text}${suffix}`;
+  const cursor = prefix.length + text.length;
+  composeText.setSelectionRange(cursor, cursor);
+}
+
+function insertAtCursor(input, text) {
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  const prefix = input.value.slice(0, start);
+  const suffix = input.value.slice(end);
+  const spacer = prefix && !/\s$/.test(prefix) ? ' ' : '';
+  input.value = `${prefix}${spacer}${text}${suffix}`;
+  const cursor = prefix.length + spacer.length + text.length;
+  input.setSelectionRange(cursor, cursor);
+}
+
+function mentionTagsFromContent(text) {
+  const tags = [];
+  const seenP = new Set();
+  const seenQ = new Set();
+  for (const ref of extractNostrRefs(text, { queue: false })) {
+    const relay = ref.relays?.[0] || '';
+    if (ref.kind === 'profile' && ref.pubkey && !seenP.has(ref.pubkey)) {
+      seenP.add(ref.pubkey);
+      tags.push(relay ? ['p', ref.pubkey, relay] : ['p', ref.pubkey]);
+    } else if (ref.kind === 'event' && ref.eventId && !seenQ.has(ref.eventId)) {
+      seenQ.add(ref.eventId); // NIP-18 quote reference
+      tags.push(relay ? ['q', ref.eventId, relay] : ['q', ref.eventId]);
+    }
+  }
+  return tags;
+}
+
+composeSend.addEventListener('click', async () => {
+  const raw = composeText.value.trim();
+  if (!raw) return;
+  // Resolve readable @Name tokens to nostr:nprofile refs so other clients render
+  // the mention; mentionTagsFromContent then derives the p-tags from those refs.
+  const text = resolveComposeMentions(raw);
+  composeSend.disabled = true;
+  composeSend.textContent = 'Posting...';
+  try {
+    await publishEvent(1, text, mentionTagsFromContent(text));
+    composeText.value = '';
+    state.composeMentions = [];
+    renderComposeTags();
+    composeSend.textContent = 'Posted!';
+    setTimeout(() => { composeSend.textContent = 'Post'; closeCompose(); }, 700);
+  } catch (err) {
+    composeSend.textContent = 'Failed';
+    setTimeout(() => { composeSend.textContent = 'Post'; composeSend.disabled = false; }, 2000);
+  }
+});
+
+function resolveComposeMentions(text) {
+  let out = text;
+  // Longest tokens first so "@Al" can't clobber the inside of "@Alice".
+  const mentions = [...state.composeMentions].sort((a, b) => b.token.length - a.token.length);
+  for (const m of mentions) out = out.split(m.token).join(`nostr:${encodeNprofile(m.pubkey)}`);
+  return out;
+}
+
+// -- add column modal --
+const addColumnBtn = document.getElementById('add-column-btn');
+const modal = document.getElementById('add-column-modal');
+const idenstrSettingsBtn = document.getElementById('idenstr-settings-btn');
+const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+const mobileMenuBackdrop = document.getElementById('mobile-menu-backdrop');
+const mobileStackBtn = document.getElementById('mobile-stack-btn');
+
+addColumnBtn.onclick = () => { closeMobileMenu(); showAddColumnModal(); };
+
+// Delegated in-app navigation for content links: hashtags open a hashtag column,
+// nostr: references open a profile column or a thread instead of dead-ending.
+document.getElementById('columns').addEventListener('click', (e) => {
+  const hashtag = e.target.closest('a.hashtag');
+  if (hashtag) { e.preventDefault(); openHashtagColumn(hashtag.dataset.tag); return; }
+  const nostrLink = e.target.closest('a[href^="nostr:"], a[href^="web+nostr:"]');
+  if (nostrLink) {
+    e.preventDefault();
+    const ref = parseNostrRef(nostrLink.getAttribute('href'));
+    if (ref?.kind === 'profile') openProfileColumn(ref.pubkey);
+    else if (ref?.kind === 'event') openConversation(ref.eventId, ref.eventId, nostrLink.closest('.column')?.dataset.col);
+    else toast('Could not open that reference', 'error');
+  }
+});
+idenstrSettingsBtn.onclick = () => { closeMobileMenu(); showIdenstrSettings(); };
+mobileMenuToggle.onclick = () => toggleMobileMenu();
+mobileMenuBackdrop.onclick = () => closeMobileMenu();
+mobileStackBtn.onclick = () => showIdenstrSettings();
+modal.onclick = (e) => { if (e.target === modal) closeModal(); };
+
+// Basic focus trap: keep Tab cycling inside the add-column / settings modal.
+modal.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab' || !modal.classList.contains('open')) return;
+  const focusables = modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])');
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+function toggleMobileMenu() {
+  const open = !document.body.classList.contains('mobile-menu-open');
+  document.body.classList.toggle('mobile-menu-open', open);
+  mobileMenuToggle.setAttribute('aria-expanded', String(open));
+  mobileMenuToggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+}
+
+function closeMobileMenu() {
+  document.body.classList.remove('mobile-menu-open');
+  mobileMenuToggle.setAttribute('aria-expanded', 'false');
+  mobileMenuToggle.setAttribute('aria-label', 'Open menu');
+}
+
+function closeModal() {
+  modal.classList.remove('open');
+}
+
+function showAddColumnModal() {
+  const mc = document.getElementById('modal-content');
+  mc.innerHTML = `
+    <h2>Add column</h2>
+    <button class="modal-option" data-type="home">
+      ${iconSvg('home')}
+      <div class="modal-option-text"><strong>Home</strong><span>Your own posts</span></div>
+    </button>
+    <button class="modal-option" data-type="following">
+      ${iconSvg('user')}
+      <div class="modal-option-text"><strong>Following</strong><span>Notes from people you follow</span></div>
+    </button>
+    <button class="modal-option" data-type="notifications">
+      ${iconSvg('bell')}
+      <div class="modal-option-text"><strong>Notifications</strong><span>Replies, mentions, reactions, reposts, zaps</span></div>
+    </button>
+    <button class="modal-option" data-type="hashtag">
+      ${iconSvg('hash')}
+      <div class="modal-option-text"><strong>Hashtag</strong><span>Follow a topic</span></div>
+    </button>
+    <button class="modal-option" data-type="profile">
+      ${iconSvg('user')}
+      <div class="modal-option-text"><strong>Profile</strong><span>One person's posts</span></div>
+    </button>
+    <button class="modal-option" data-type="custom">
+      ${iconSvg('layers')}
+      <div class="modal-option-text"><strong>Custom Feed</strong><span>Pick specific follows</span></div>
+    </button>
+  `;
+
+  mc.querySelectorAll('.modal-option').forEach(btn => {
+    btn.onclick = () => handleColumnTypeSelect(btn.dataset.type);
+  });
+  modal.classList.add('open');
+}
+
+function handleColumnTypeSelect(type) {
+  if (type === 'hashtag') return showHashtagForm();
+  if (type === 'profile') return showProfileForm();
+  if (type === 'custom') return showCustomFeedForm();
+
+  const names = { home: 'Home', following: 'Following', mentions: 'Mentions', notifications: 'Notifications' };
+  const config = { type, name: names[type] ?? type };
+  if (type === 'notifications') config.notificationFilter = 'all';
+  addColumn(config);
+  closeModal();
+}
+
+function showHashtagForm() {
+  const mc = document.getElementById('modal-content');
+  mc.innerHTML = `
+    <h2>Hashtag column</h2>
+    <div class="field">
+      <label>Hashtag</label>
+      <input type="text" id="hashtag-input" placeholder="bitcoin" autofocus />
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-ghost" onclick="showAddColumnModal()">Back</button>
+      <button class="btn btn-primary" id="hashtag-add">Add</button>
+    </div>
+  `;
+  document.getElementById('hashtag-add').onclick = () => {
+    const tag = document.getElementById('hashtag-input').value.trim().replace(/^#/, '');
+    if (!tag) return;
+    addColumn({ type: 'hashtag', name: `#${tag}`, tag });
+    closeModal();
+  };
+  document.getElementById('hashtag-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('hashtag-add').click();
+  });
+}
+
+function showProfileForm() {
+  const mc = document.getElementById('modal-content');
+  mc.innerHTML = `
+    <h2>Profile column</h2>
+    <div class="field">
+      <label>npub or hex pubkey</label>
+      <input type="text" id="profile-input" placeholder="npub1..." autofocus />
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-ghost" onclick="showAddColumnModal()">Back</button>
+      <button class="btn btn-primary" id="profile-add">Add</button>
+    </div>
+  `;
+  document.getElementById('profile-add').onclick = () => {
+    const input = document.getElementById('profile-input').value.trim();
+    if (!input) return;
+    const pubkey = toHexPubkey(input);
+    if (!pubkey) { toast('Not a valid npub or hex pubkey', 'error'); return; }
+    openOrFocusColumn(
+      { type: 'profile', name: shortNpub(input), pubkey },
+      c => c.type === 'profile' && c.pubkey === pubkey
+    );
+    closeModal();
+  };
+  document.getElementById('profile-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('profile-add').click();
+  });
+}
+
+function showCustomFeedForm(existing = null) {
+  const mc = document.getElementById('modal-content');
+  const selectedPubkeys = new Set(existing?.pubkeys ?? []);
+
+  mc.innerHTML = `
+    <h2>${existing ? 'Edit' : 'Custom'} feed</h2>
+    <div class="field">
+      <label>Name</label>
+      <input type="text" id="custom-name" placeholder="Privacy Tools" value="${esc(existing?.name ?? '')}" />
+    </div>
+    <div class="field">
+      <label>Select follows (${state.following.length})</label>
+      <input type="text" class="follow-picker-search" id="follow-search" placeholder="Search..." />
+      <div class="follow-picker" id="follow-picker"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-ghost" id="custom-back">Back</button>
+      <button class="btn btn-primary" id="custom-add">${existing ? 'Save' : 'Add'}</button>
+    </div>
+  `;
+
+  function renderPicker(filter = '') {
+    const picker = document.getElementById('follow-picker');
+    const lf = filter.toLowerCase();
+    const filtered = state.following.filter(f =>
+      !lf || f.name.toLowerCase().includes(lf) || f.petname.toLowerCase().includes(lf) || f.pubkey.includes(lf)
+    );
+    picker.innerHTML = '';
+    for (const f of filtered) {
+      const item = document.createElement('label');
+      item.className = `follow-picker-item${selectedPubkeys.has(f.pubkey) ? ' selected' : ''}`;
+      item.innerHTML = `
+        <input type="checkbox" ${selectedPubkeys.has(f.pubkey) ? 'checked' : ''} />
+        <span>${esc(f.name || f.petname || shortNpub(f.pubkey))}</span>
+      `;
+      item.querySelector('input').onchange = (e) => {
+        if (e.target.checked) selectedPubkeys.add(f.pubkey);
+        else selectedPubkeys.delete(f.pubkey);
+        item.classList.toggle('selected', e.target.checked);
+      };
+      picker.appendChild(item);
+    }
+  }
+
+  renderPicker();
+  document.getElementById('follow-search').oninput = (e) => renderPicker(e.target.value);
+  document.getElementById('custom-back').onclick = () => existing ? closeModal() : showAddColumnModal();
+  document.getElementById('custom-add').onclick = () => {
+    const name = document.getElementById('custom-name').value.trim() || 'Custom';
+    const pubkeys = [...selectedPubkeys];
+    if (!pubkeys.length) return;
+    if (existing) {
+      existing.name = name;
+      existing.pubkeys = pubkeys;
+      renderColumns();
+    } else {
+      addColumn({ type: 'custom', name, pubkeys });
+    }
+    closeModal();
+  };
+}
+
+function editCustomColumn(col) {
+  showCustomFeedForm(col);
+  modal.classList.add('open');
+}
+
+// Smoothly bring a column into view. On mobile each column is 100vw, so a column
+// added at the end of the deck would otherwise sit off-screen to the right and the
+// viewport would stay pinned to the first column. rAF lets the new DOM lay out first.
+function scrollColumnIntoView(id) {
+  requestAnimationFrame(() => {
+    document.querySelector(`.column[data-col="${id}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+  });
+}
+
+function addColumn(config) {
+  const id = genId();
+  state.columns.push({ id, events: [], ...config });
+  renderColumns();
+  scrollColumnIntoView(id);
+  return id;
+}
+
+// Open a column, or focus the matching existing one instead of stacking a duplicate.
+function openOrFocusColumn(config, matchFn) {
+  const existing = matchFn ? state.columns.find(matchFn) : null;
+  if (existing) {
+    scrollColumnIntoView(existing.id);
+    return existing;
+  }
+  addColumn(config);
+  return state.columns[state.columns.length - 1];
+}
+
+// Fast lookup set for the avatar follow-ring, rebuilt whenever the follow list changes.
+function refreshFollowingSet() {
+  state.followingSet = new Set((state.following ?? []).map(f => f.pubkey).filter(Boolean));
+}
+
+function isFollowing(pubkey) {
+  return Boolean(pubkey) && (state.followingSet?.has(pubkey) ?? false);
+}
+
+// Mutate the local follow list + ring instantly (optimistic); the server call follows.
+function setFollowLocal(pubkey, name, following) {
+  if (following) {
+    if (!state.following.some(f => f.pubkey === pubkey)) {
+      state.following.push({ pubkey, npub: '', petname: name || '', name: name || '', picture: '' });
+    }
+  } else {
+    state.following = state.following.filter(f => f.pubkey !== pubkey);
+  }
+  refreshFollowingSet();
+  document.querySelectorAll(`.note-avatar[data-pubkey="${CSS.escape(pubkey)}"]`)
+    .forEach(el => el.classList.toggle('following', following));
+}
+
+function toggleFollow(col) {
+  if (!col?.pubkey) return;
+  return isFollowing(col.pubkey) ? unfollowUser(col.pubkey, col.name, col) : followUser(col.pubkey, col.name, col);
+}
+
+async function followUser(pubkey, name, col) {
+  const label = name || shortNpub(pubkey);
+  setFollowLocal(pubkey, name, true);
+  if (col) updateColumnHeader(col);
+  try {
+    await api('/api/v1/idenstr/following/follow', { method: 'POST', body: { pubkey, petname: name || '' } });
+    toast(`Following ${label}`, 'success');
+  } catch (err) {
+    setFollowLocal(pubkey, name, false);
+    if (col) updateColumnHeader(col);
+    toast(followError(err), 'error');
+  }
+}
+
+async function unfollowUser(pubkey, name, col) {
+  const label = name || shortNpub(pubkey);
+  setFollowLocal(pubkey, name, false);
+  if (col) updateColumnHeader(col);
+  try {
+    await api('/api/v1/idenstr/following/unfollow', { method: 'POST', body: { pubkey } });
+    toast(`Unfollowed ${label}`, 'info', { label: 'Undo', onAction: () => followUser(pubkey, name, col) });
+  } catch (err) {
+    setFollowLocal(pubkey, name, true);
+    if (col) updateColumnHeader(col);
+    toast(followError(err), 'error');
+  }
+}
+
+function followError(err) {
+  const m = String(err?.message || err || '');
+  if (/403|forbidden|scope|following:write/i.test(m)) {
+    return "Grant Feedstr the 'following:write' scope in Idenstr to follow";
+  }
+  return 'Follow update failed';
+}
+
+function openProfileColumn(pubkey, name) {
+  if (!pubkey) { toast('Could not resolve that profile', 'error'); return; }
+  openOrFocusColumn(
+    { type: 'profile', name: name || shortNpub(pubkey), pubkey },
+    c => c.type === 'profile' && c.pubkey === pubkey
+  );
+}
+
+function openHashtagColumn(rawTag) {
+  const tag = String(rawTag || '').replace(/^#/, '').toLowerCase();
+  if (!tag) return;
+  openOrFocusColumn(
+    { type: 'hashtag', name: `#${tag}`, tag },
+    c => c.type === 'hashtag' && c.tag?.toLowerCase() === tag
+  );
+}
+
+function removeColumnCache(id) {
+  clearTimeout(cacheTimers.get(id));
+  cacheTimers.delete(id);
+  api(`/api/v1/cache/${id}`, { method: 'DELETE' }).catch(() => {});
+}
+
+function reloadColumn(col) {
+  col.events = [];
+  renderColumnFeed(col);
+  startColumnSub(col);
+}
+
+function removeColumn(id) {
+  unsubscribe(`col_${id}`);
+  unsubscribe(`replies_${id}`);
+  unsubscribe(`engagement_${id}`);
+  unsubscribe(`thread_replies_${id}`);
+  state.columns = state.columns.filter(c => c.id !== id);
+  removeColumnCache(id);
+  renderColumns();
+}
+
+const DEFAULT_COLUMNS = () => [
+  { id: genId(), type: 'home', name: 'Home' },
+  { id: genId(), type: 'following', name: 'Following' },
+  { id: genId(), type: 'notifications', name: 'Notifications', notificationFilter: 'all' }
+];
+
+async function loadColumns() {
+  try {
+    const { value } = await api('/api/v1/state/columns');
+    if (Array.isArray(value) && value.length) return value;
+  } catch {}
+  // One-time migration of columns saved by older versions in browser storage.
+  const legacy = localStorage.getItem('feedstr:columns');
+  if (legacy) {
+    try {
+      const cols = JSON.parse(legacy);
+      if (Array.isArray(cols) && cols.length) {
+        await persistColumns(cols);
+        localStorage.removeItem('feedstr:columns');
+        return cols;
+      }
+    } catch {}
+  }
+  return DEFAULT_COLUMNS();
+}
+
+async function persistColumns(columns) {
+  const serializable = columns.map(({ events, ...rest }) => rest);
+  try {
+    await api('/api/v1/state/columns', { method: 'PUT', body: { value: serializable } });
+  } catch (err) {
+    console.warn('Failed to save columns', err.message);
+  }
+}
+
+// Liked note ids live in Feedstr's DB so the heart stays filled across reloads;
+// the like itself is the published kind:7 reaction vaulted in the private relay.
+async function loadLiked() {
+  try {
+    const { value } = await api('/api/v1/state/liked');
+    if (Array.isArray(value)) return new Set(value);
+  } catch {}
+  return new Set();
+}
+
+function persistLiked() {
+  api('/api/v1/state/liked', { method: 'PUT', body: { value: [...state.liked] } })
+    .catch(err => console.warn('Failed to save liked notes', err.message));
+}
+
+// Mutes come from Idenstr's kind:10000 identity policy when available. The
+// Feedstr local state fallback keeps older keyword mutes alive until Idenstr is linked.
+async function loadMutes() {
+  try {
+    const { value } = await api('/api/v1/state/mutes');
+    return normalizeMutes(value);
+  } catch {}
+  return { entries: [] };
+}
+
+function normalizeMutes(value) {
+  if (Array.isArray(value)) {
+    return { entries: value.map((s, i) => ({ id: `legacy-${i}`, type: 'keyword', value: String(s).toLowerCase(), label: '', addedAt: '' })) };
+  }
+  const entries = Array.isArray(value?.entries) ? value.entries : [];
+  return { ...value, entries: entries.map((entry, i) => ({ id: entry.id || `mute-${i}`, type: entry.type || 'keyword', value: String(entry.value ?? entry.keyword ?? '').toLowerCase(), label: entry.label || '', addedAt: entry.addedAt || '' })).filter(e => e.value) };
+}
+
+function refreshMuteSets() {
+  state.muteSets = {
+    keyword: new Set(muteEntriesByType('keyword').map(e => e.value)),
+    pubkey: new Set(muteEntriesByType('pubkey').map(e => e.value)),
+    thread: new Set([...muteEntriesByType('thread'), ...muteEntriesByType('event')].map(e => e.value)),
+    hashtag: new Set(muteEntriesByType('hashtag').map(e => e.value.replace(/^#/, '')))
+  };
+}
+
+function muteEntriesByType(type) {
+  return (state.mutes?.entries ?? []).filter(entry => entry.type === type);
+}
+
+function persistMutes() {
+  api('/api/v1/idenstr/mutes', { method: 'PUT', body: { entries: state.mutes.entries } })
+    .catch(() => api('/api/v1/state/mutes', { method: 'PUT', body: { value: state.mutes } })
+      .catch(err => console.warn('Failed to save mutes', err.message)));
+}
+
+function isMuted(event) {
+  if (!event) return false;
+  const sets = state.muteSets || {};
+  if (sets.pubkey?.has(event.pubkey)) return true;
+  if (isMutedThreadEvent(event)) return true;
+  if (event.kind === 1) {
+    const content = (event.content || '').toLowerCase();
+    for (const term of sets.keyword ?? []) if (term && content.includes(term)) return true;
+    for (const tag of event.tags ?? []) if (tag[0] === 't' && sets.hashtag?.has(String(tag[1] || '').toLowerCase().replace(/^#/, ''))) return true;
+  }
+  return false;
+}
+
+function isMutedThreadEvent(event) {
+  const muted = state.muteSets?.thread;
+  if (!muted?.size || !event) return false;
+  if (muted.has(event.id)) return true;
+  const parent = getReplyParentRef(event)?.eventId;
+  if (parent && muted.has(parent)) return true;
+  return (event.tags ?? []).some(tag => tag[0] === 'e' && muted.has(tag[1]));
+}
+
+function isMutedNotification(notification) {
+  if (!notification) return false;
+  if (state.muteSets?.pubkey?.has(notification.actorPubkey)) return true;
+  if (notification.targetEventId && state.muteSets?.thread?.has(notification.targetEventId)) return true;
+  return isMuted(notification.rawEvent);
+}
+
+function isMutedProfile(pubkey) {
+  return Boolean(pubkey) && Boolean(state.muteSets?.pubkey?.has(pubkey));
+}
+
+function setMuteProfileLocal(pubkey, name, muted) {
+  if (!pubkey) return;
+  if (muted) {
+    if (!isMutedProfile(pubkey)) {
+      state.mutes.entries.push({ id: `pubkey-${pubkey}`, type: 'pubkey', value: pubkey, label: name || '', addedAt: new Date().toISOString() });
+    }
+  } else {
+    state.mutes.entries = (state.mutes.entries ?? []).filter(e => !(e.type === 'pubkey' && e.value === pubkey));
+  }
+  refreshMuteSets();
+}
+
+function setMuteThreadLocal(threadId, muted) {
+  if (!threadId) return;
+  if (muted) {
+    if (!state.muteSets?.thread?.has(threadId)) {
+      state.mutes.entries.push({ id: `thread-${threadId}`, type: 'thread', value: threadId, label: 'Muted thread', addedAt: new Date().toISOString() });
+    }
+  } else {
+    state.mutes.entries = (state.mutes.entries ?? []).filter(e => !((e.type === 'thread' || e.type === 'event') && e.value === threadId));
+  }
+  refreshMuteSets();
+}
+
+function toggleMuteProfile(col) {
+  if (!col?.pubkey) return;
+  return isMutedProfile(col.pubkey) ? unmuteProfile(col.pubkey, col.name, col) : muteProfile(col.pubkey, col.name, col);
+}
+
+async function muteProfile(pubkey, name, col) {
+  const label = name || shortNpub(pubkey);
+  setMuteProfileLocal(pubkey, name, true);
+  if (col) updateColumnHeader(col);
+  scheduleRerenderAllColumns();
+  try {
+    await api('/api/v1/idenstr/mutes/mute', { method: 'POST', body: { type: 'pubkey', value: pubkey, label } });
+    toast(`Muted ${label}`, 'success');
+  } catch (err) {
+    setMuteProfileLocal(pubkey, name, false);
+    if (col) updateColumnHeader(col);
+    scheduleRerenderAllColumns();
+    toast(muteError(err), 'error');
+  }
+}
+
+async function unmuteProfile(pubkey, name, col) {
+  const label = name || shortNpub(pubkey);
+  setMuteProfileLocal(pubkey, name, false);
+  if (col) updateColumnHeader(col);
+  scheduleRerenderAllColumns();
+  try {
+    await api('/api/v1/idenstr/mutes/unmute', { method: 'POST', body: { idOrValue: pubkey } });
+    toast(`Unmuted ${label}`, 'success');
+  } catch (err) {
+    setMuteProfileLocal(pubkey, name, true);
+    if (col) updateColumnHeader(col);
+    scheduleRerenderAllColumns();
+    toast(muteError(err), 'error');
+  }
+}
+
+function muteError(err) {
+  const m = String(err?.message || err || '');
+  if (/403|forbidden|scope|mutes:write/i.test(m)) return "Grant Feedstr the 'mutes:write' scope in Idenstr to mute";
+  return 'Mute update failed';
+}
+
+async function muteThread(event) {
+  const threadId = getReplyParentRef(event)?.eventId || event.id;
+  if (!threadId) return;
+  if (state.muteSets?.thread?.has(threadId)) return;
+  setMuteThreadLocal(threadId, true);
+  scheduleRerenderAllColumns();
+  try {
+    await api('/api/v1/idenstr/mutes/mute', { method: 'POST', body: { type: 'thread', value: threadId, label: 'Muted thread' } });
+    toast('Thread muted', 'success');
+  } catch (err) {
+    setMuteThreadLocal(threadId, false);
+    scheduleRerenderAllColumns();
+    toast(muteError(err), 'error');
+  }
+}
+
+// One-shot REQ to the private relay only (it holds everything you signed) for your
+// own reactions. handleEvent collects the e-tags; handleEose persists and rerenders.
+function backfillLiked() {
+  const pubkey = state.identity?.pubkey;
+  const url = state.config?.privateRelayUrl;
+  if (!pubkey || !url) return;
+  const ws = state.sockets.get(url);
+  if (ws?.readyState !== WebSocket.OPEN) return;
+  const subId = `liked_backfill_${Date.now()}`;
+  const filter = { kinds: [7], authors: [pubkey] };
+  state.subs.set(subId, { filters: [filter], columnId: null, oneshot: true, likedBackfill: true });
+  ws.send(JSON.stringify(['REQ', subId, filter]));
+}
+
+// Reply counts: how many notes e-tag a given note. Used to show "N replies" on
+// the reply action of your own posts in the Home column.
+function replyCountLabel(noteId) {
+  const n = state.replyCounts.get(noteId)?.size ?? 0;
+  return n ? String(n) : '';
+}
+
+function updateReplyBadge(noteId) {
+  const label = replyCountLabel(noteId);
+  const sel = window.CSS?.escape ? CSS.escape(noteId) : noteId;
+  document.querySelectorAll(`.note[data-id="${sel}"] [data-action="reply"] span`)
+    .forEach(span => { span.textContent = label; });
+}
+
+// A kind:1 reply event came back on a reply-count subscription: credit it to
+// every tracked note it references, then refresh those badges.
+function registerReplyEvent(event) {
+  if (!event || event.kind !== 1) return;
+  for (const tag of event.tags ?? []) {
+    if (tag[0] !== 'e') continue;
+    const noteId = tag[1];
+    const set = state.replyCounts.get(noteId);
+    if (!set || event.id === noteId) continue; // only count toward tracked notes
+    if (!set.has(event.id)) {
+      set.add(event.id);
+      updateReplyBadge(noteId);
+    }
+  }
+}
+
+// (Re)subscribe for replies to the notes currently shown in a column. Debounced
+// because the column re-renders on every incoming note.
+const replyCountTimers = new Map();
+function scheduleReplyCounts(col) {
+  if (!col?.id) return;
+  clearTimeout(replyCountTimers.get(col.id));
+  replyCountTimers.set(col.id, setTimeout(() => {
+    replyCountTimers.delete(col.id);
+    fetchReplyCounts(col);
+  }, 800));
+}
+
+function fetchReplyCounts(col) {
+  const ids = (col.events ?? []).filter(e => e.kind === 1).map(e => e.id).slice(0, 200);
+  if (!ids.length) return;
+  for (const id of ids) if (!state.replyCounts.has(id)) state.replyCounts.set(id, new Set());
+  const subId = `replies_${col.id}`;
+  unsubscribe(subId);
+  const filter = { kinds: [1], '#e': ids };
+  state.subs.set(subId, { filters: [filter], columnId: null, replyCount: true, allRelays: true });
+  const sockets = [...state.sockets.values()].filter(ws => ws.readyState === WebSocket.OPEN);
+  for (const ws of sockets) ws.send(JSON.stringify(['REQ', subId, filter]));
+}
+
+// Engagement counts: how many reposts (kind:6) and reactions (kind:7) e-tag a note.
+function repostCountLabel(noteId) {
+  const n = state.repostCounts.get(noteId)?.size ?? 0;
+  return n ? String(n) : '';
+}
+
+function reactionCountLabel(noteId) {
+  const n = state.reactionCounts.get(noteId)?.size ?? 0;
+  return n ? String(n) : '';
+}
+
+function updateEngagementBadges(noteId) {
+  const sel = window.CSS?.escape ? CSS.escape(noteId) : noteId;
+  document.querySelectorAll(`.note[data-id="${sel}"] [data-action="repost"] span`)
+    .forEach(span => { span.textContent = repostCountLabel(noteId); });
+  document.querySelectorAll(`.note[data-id="${sel}"] [data-action="like"] span`)
+    .forEach(span => { span.textContent = reactionCountLabel(noteId); });
+}
+
+function registerEngagementEvent(event) {
+  if (!event || (event.kind !== 6 && event.kind !== 7)) return;
+  const counts = event.kind === 6 ? state.repostCounts : state.reactionCounts;
+  for (const tag of event.tags ?? []) {
+    if (tag[0] !== 'e') continue;
+    const noteId = tag[1];
+    const set = counts.get(noteId);
+    if (!set) continue; // only count toward tracked notes
+    if (!set.has(event.id)) {
+      set.add(event.id);
+      updateEngagementBadges(noteId);
+    }
+  }
+}
+
+const engagementCountTimers = new Map();
+function scheduleEngagementCounts(col) {
+  if (!col?.id) return;
+  clearTimeout(engagementCountTimers.get(col.id));
+  engagementCountTimers.set(col.id, setTimeout(() => {
+    engagementCountTimers.delete(col.id);
+    fetchEngagementCounts(col);
+  }, 800));
+}
+
+function fetchEngagementCounts(col) {
+  const ids = (col.events ?? []).filter(e => e.kind === 1).map(e => e.id).slice(0, 200);
+  if (!ids.length) return;
+  for (const id of ids) {
+    if (!state.repostCounts.has(id)) state.repostCounts.set(id, new Set());
+    if (!state.reactionCounts.has(id)) state.reactionCounts.set(id, new Set());
+  }
+  const subId = `engagement_${col.id}`;
+  unsubscribe(subId);
+  const filter = { kinds: [6, 7], '#e': ids };
+  state.subs.set(subId, { filters: [filter], columnId: null, engagementCount: true, allRelays: true });
+  const sockets = [...state.sockets.values()].filter(ws => ws.readyState === WebSocket.OPEN);
+  for (const ws of sockets) ws.send(JSON.stringify(['REQ', subId, filter]));
+}
+
+function saveColumns() {
+  persistColumns(state.columns);
+}
+
+// Cached observed notes are persisted per column (debounced) so feeds are warm
+// on the next visit; the live subscription dedupes against them on reconnect.
+const cacheTimers = new Map();
+function scheduleCacheColumn(col) {
+  if (!col?.id) return;
+  clearTimeout(cacheTimers.get(col.id));
+  cacheTimers.set(col.id, setTimeout(() => {
+    cacheTimers.delete(col.id);
+    api(`/api/v1/cache/${col.id}`, { method: 'PUT', body: { events: col.events ?? [] } }).catch(() => {});
+  }, 1500));
+}
+
+async function hydrateColumnCache(col) {
+  if (!col?.id) return;
+  try {
+    const { events } = await api(`/api/v1/cache/${col.id}`);
+    if (!Array.isArray(events) || !events.length) return;
+    if (!col.events) col.events = [];
+    const seen = new Set(col.events.map(e => e.id));
+    for (const event of events) if (!seen.has(event.id)) col.events.push(event);
+    col.events.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
+    renderColumnFeed(col);
+  } catch {}
+}
+
+// -- helpers --
+function genId() { return Math.random().toString(36).slice(2, 10); }
+
+// Lightweight snackbar. type: 'info' (default) | 'success' | 'error'.
+let toastTimer = null;
+function toast(message, type = 'info', action = null) {
+  const host = document.getElementById('toast-host');
+  if (!host) return;
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  const text = document.createElement('span');
+  text.textContent = message;
+  el.appendChild(text);
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  const remove = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 200); };
+  if (action) {
+    const btn = document.createElement('button');
+    btn.className = 'toast-action';
+    btn.textContent = action.label;
+    btn.onclick = (e) => { e.stopPropagation(); remove(); action.onAction(); };
+    el.appendChild(btn);
+  }
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(remove, action ? 6000 : 3200);
+  el.onclick = remove;
+}
+
+// npub / nprofile / 64-char hex -> hex pubkey, or null if unrecognisable.
+function toHexPubkey(input) {
+  const value = String(input ?? '').trim();
+  if (/^[0-9a-f]{64}$/i.test(value)) return value.toLowerCase();
+  const ref = parseNostrRef(value);
+  return ref?.kind === 'profile' ? ref.pubkey : null;
+}
+
+function shortNpub(key) {
+  if (!key) return '?';
+  if (key.startsWith('npub')) return key.slice(0, 8) + '...' + key.slice(-4);
+  return key.slice(0, 8) + '...';
+}
+
+function relativeTime(ts) {
+  if (!ts) return '';
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 60) return 'now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
+}
+
+function getEventActorPubkey(event) {
+  if (event?.kind === 9735) return getZapSenderPubkey(event);
+  return event?.pubkey;
+}
+
+function getZapSenderPubkey(event) {
+  const pTag = firstTagValue(event, 'P');
+  if (pTag) return pTag;
+  const description = firstTagValue(event, 'description');
+  if (description) {
+    try {
+      const request = JSON.parse(description);
+      if (request?.pubkey) return request.pubkey;
+    } catch {}
+  }
+  return event?.pubkey;
+}
+
+function firstTagValue(event, name) {
+  return (event?.tags ?? []).find(tag => tag[0] === name)?.[1] || '';
+}
+
+function parseZapComment(event) {
+  const description = firstTagValue(event, 'description');
+  if (!description) return '';
+  try {
+    const request = JSON.parse(description);
+    return request?.content || '';
+  } catch {
+    return '';
+  }
+}
+
+function parseZapAmountSats(event) {
+  const millisats = Number(firstTagValue(event, 'amount'));
+  if (Number.isFinite(millisats) && millisats > 0) return Math.round(millisats / 1000);
+
+  const bolt11 = firstTagValue(event, 'bolt11').toLowerCase();
+  const match = bolt11.match(/^lnbc(\d+)([munp]?)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  const multiplier = { '': 100000000, m: 100000, u: 100, n: 0.1, p: 0.0001 }[match[2]];
+  const sats = value * multiplier;
+  return Number.isFinite(sats) && sats > 0 ? Math.round(sats) : null;
+}
+
+function formatContent(text, event = null) {
+  const raw = expandIndexedNostrReferences(String(text ?? ''), event);
+  const urls = extractUrls(raw);
+  const nostrRefs = extractNostrRefs(raw);
+  const eventRefs = nostrRefs.filter(ref => ref.kind === 'event');
+  const imageUrls = urls.filter(isImageUrl);
+  const visibleText = removePreviewedTokens(raw, [...imageUrls, ...eventRefs.map(ref => ref.raw)]);
+  return `${linkifyText(visibleText)}${renderLinkPreviews(urls)}${renderNostrEventPreviews(eventRefs)}`;
+}
+
+function expandIndexedNostrReferences(text, event) {
+  if (!event?.tags?.length) return text;
+  return String(text ?? '').replace(/#\[(\d+)\]/g, (match, indexText) => {
+    const tag = event.tags[Number(indexText)];
+    if (!tag) return match;
+    if (tag[0] === 'p' && isHex(tag[1], 64)) {
+      seedProfileHintFromTag(tag);
+      return `nostr:${encodeNprofile(tag[1], tag[2] ? [tag[2]] : [])}`;
+    }
+    if (tag[0] === 'e' && isHex(tag[1], 64)) return `nostr:${encodeNote(tag[1])}`;
+    if (tag[0] === 't' && tag[1]) return `#${tag[1]}`;
+    return match;
+  });
+}
+
+function seedProfileHintFromTag(tag) {
+  const pubkey = tag?.[1];
+  const petname = tag?.[3];
+  if (!isHex(pubkey, 64) || !petname) return;
+  const existing = state.profiles.get(pubkey);
+  if (existing?.name || existing?.display_name || existing?.displayName) return;
+  state.profiles.set(pubkey, { ...(existing ?? {}), name: petname, display_name: petname, created_at: existing?.created_at ?? 0 });
+}
+
+function linkifyText(text) {
+  return esc(text)
+    .replace(/(https?:\/\/[^\s<]+)/g, (match) => {
+      const clean = normalizeUrlForDisplay(match);
+      const trailing = match.slice(clean.length);
+      return `<a href="${esc(clean)}" target="_blank" rel="noopener noreferrer">${esc(clean)}</a>${esc(trailing)}`;
+    })
+    .replace(/((?:web\+)?nostr:[^\s<]+|(?:n(?:profile|pub|event|ote)|event)1[023456789acdefghjklmnpqrstuvwxyz]+)/gi, (match) => {
+      const clean = normalizeUrlForDisplay(match);
+      const ref = parseNostrRef(clean);
+      const trailing = match.slice(clean.length);
+      if (ref?.kind === 'profile') return `${renderNostrProfileMention(ref)}${esc(trailing)}`;
+      const href = clean.startsWith('nostr:') || clean.startsWith('web+nostr:') ? clean : `nostr:${clean}`;
+      return `<a href="${esc(href)}" class="nostr-ref-link">${esc(clean)}</a>${esc(trailing)}`;
+    })
+    .replace(/(^|\s)#([\p{L}\p{N}_-]+)/gu, '$1<a href="#" class="hashtag" data-tag="$2">#$2</a>')
+    .replace(/\n/g, '<br>');
+}
+
+function removePreviewedTokens(text, tokens) {
+  if (!tokens.length) return text;
+  const tokenSet = new Set(tokens);
+  const withoutTokens = String(text ?? '').replace(/(?:https?:\/\/[^\s<>"]+|(?:web\+)?nostr:[^\s<>"]+|(?:n(?:profile|pub|event|ote)|event)1[023456789acdefghjklmnpqrstuvwxyz]+)/gi, (match) => {
+    const clean = normalizeUrlForDisplay(match);
+    const trailing = match.slice(clean.length);
+    return tokenSet.has(clean) ? trailing : match;
+  });
+  return withoutTokens
+    .split('\n')
+    .map(line => line.replace(/[ \t]{2,}/g, ' ').trimEnd())
+    .filter(line => line.trim() || withoutTokens.trim().includes('\n'))
+    .join('\n')
+    .trim();
+}
+
+function extractUrls(text) {
+  const matches = String(text ?? '').match(/https?:\/\/[^\s<>"]+/g) ?? [];
+  return [...new Set(matches.map(normalizeUrlForDisplay).filter(Boolean))];
+}
+
+function normalizeUrlForDisplay(url) {
+  return String(url ?? '').replace(/[),.!?;:]+$/g, '');
+}
+
+function renderLinkPreviews(urls) {
+  if (!urls.length) return '';
+  const images = urls.filter(isImageUrl);
+  const links = urls.filter(url => !isImageUrl(url));
+  const imageHtml = images.length
+    ? `<div class="note-media-grid">${images.map(renderImagePreview).join('')}</div>`
+    : '';
+  const linkHtml = links.length
+    ? `<div class="note-link-list">${links.slice(0, 3).map(renderLinkCard).join('')}</div>`
+    : '';
+  return `${imageHtml}${linkHtml}`;
+}
+
+function isImageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return /\.(avif|gif|jpe?g|png|webp)$/i.test(parsed.pathname);
+  } catch {
+    return /\.(avif|gif|jpe?g|png|webp)(\?|#|$)/i.test(url);
+  }
+}
+
+function renderImagePreview(url) {
+  return `<a class="note-media" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" loading="lazy" alt="Attached image" onerror="this.closest('.note-media')?.remove()" /></a>`;
+}
+
+function renderLinkCard(url) {
+  const host = linkHost(url);
+  return `<a class="note-link-card" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span class="note-link-host">${esc(host)}</span><span class="note-link-url">${esc(url)}</span></a>`;
+}
+
+function linkHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+function extractNostrRefs(text, options = {}) {
+  const shouldQueue = options.queue !== false;
+  const matches = String(text ?? '').match(/(?:web\+)?nostr:[^\s<>"]+|(?:n(?:profile|pub|event|ote)|event)1[023456789acdefghjklmnpqrstuvwxyz]+/gi) ?? [];
+  const refs = [];
+  const seen = new Set();
+  for (const match of matches) {
+    const raw = normalizeUrlForDisplay(match);
+    const ref = parseNostrRef(raw);
+    if (!ref) continue;
+    const key = `${ref.kind}:${ref.eventId || ref.pubkey}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ ...ref, raw });
+    if (shouldQueue && ref.kind === 'event') fetchEmbeddedEvent(ref.eventId, ref.relays);
+    if (shouldQueue && ref.kind === 'profile' && profileNeedsRefresh(ref.pubkey)) queueProfileFetch(ref.pubkey);
+  }
+  return refs;
+}
+
+function extractNostrEventRefs(text) {
+  return extractNostrRefs(text).filter(ref => ref.kind === 'event');
+}
+
+function parseNostrRef(value) {
+  const entity = String(value ?? '').replace(/^web\+nostr:/i, '').replace(/^nostr:/i, '');
+  const decoded = decodeNip19(entity);
+  if (!decoded) return null;
+  if ((decoded.prefix === 'note' || decoded.prefix === 'event') && decoded.bytes.length >= 32) {
+    return { kind: 'event', type: decoded.prefix, eventId: bytesToHex(decoded.bytes.slice(0, 32)), relays: [] };
+  }
+  if (decoded.prefix === 'nevent') {
+    const ref = parseNevent(decoded.bytes);
+    return ref ? { kind: 'event', ...ref } : null;
+  }
+  if (decoded.prefix === 'npub' && decoded.bytes.length >= 32) {
+    return { kind: 'profile', type: 'npub', pubkey: bytesToHex(decoded.bytes.slice(0, 32)), relays: [] };
+  }
+  if (decoded.prefix === 'nprofile') {
+    const ref = parseNprofile(decoded.bytes);
+    return ref ? { kind: 'profile', ...ref } : null;
+  }
+  return null;
+}
+
+function parseNostrEventRef(value) {
+  const ref = parseNostrRef(value);
+  return ref?.kind === 'event' ? ref : null;
+}
+
+function parseNevent(bytes) {
+  let i = 0;
+  let eventId = '';
+  const relays = [];
+  while (i + 2 <= bytes.length) {
+    const type = bytes[i++];
+    const len = bytes[i++];
+    const value = bytes.slice(i, i + len);
+    i += len;
+    if (type === 0 && len === 32) eventId = bytesToHex(value);
+    if (type === 1) relays.push(new TextDecoder().decode(new Uint8Array(value)));
+  }
+  return eventId ? { type: 'nevent', eventId, relays } : null;
+}
+
+function parseNprofile(bytes) {
+  let i = 0;
+  let pubkey = '';
+  const relays = [];
+  while (i + 2 <= bytes.length) {
+    const type = bytes[i++];
+    const len = bytes[i++];
+    const value = bytes.slice(i, i + len);
+    i += len;
+    if (type === 0 && len === 32) pubkey = bytesToHex(value);
+    if (type === 1) relays.push(new TextDecoder().decode(new Uint8Array(value)));
+  }
+  return pubkey ? { type: 'nprofile', pubkey, relays } : null;
+}
+
+function renderNostrEventPreviews(refs) {
+  if (!refs.length) return '';
+  return `<div class="nostr-embed-list">${refs.map(renderNostrEventCard).join('')}</div>`;
+}
+
+function renderNostrEventCard(ref) {
+  const event = state.notes.get(ref.eventId);
+  if (!event) {
+    return `<div class="nostr-embed loading" data-event-id="${esc(ref.eventId)}"><span>Nostr event</span><strong>${esc(shortNpub(ref.eventId))}</strong><small>Loading from relays...</small></div>`;
+  }
+  const profile = state.profiles.get(event.pubkey) ?? {};
+  if (profileNeedsRefresh(event.pubkey)) queueProfileFetch(event.pubkey);
+  const name = profile.display_name || profile.displayName || profile.name || shortNpub(event.pubkey);
+  const preview = stripMarkup(formatContent(event.content ?? '', event)).slice(0, 180) || 'Nostr event';
+  return `<a class="nostr-embed" data-event-id="${esc(ref.eventId)}" href="nostr:${esc(encodeNote(ref.eventId))}" title="Open Nostr event"><span>Nostr event</span><strong>${esc(name)}</strong><small>${esc(preview)}</small></a>`;
+}
+
+function renderNostrProfileMention(ref) {
+  const profile = state.profiles.get(ref.pubkey) ?? {};
+  if (profileNeedsRefresh(ref.pubkey)) queueProfileFetch(ref.pubkey);
+  const name = profile.display_name || profile.displayName || profile.name || shortNpub(ref.pubkey);
+  const href = `nostr:${encodeNprofile(ref.pubkey, ref.relays ?? [])}`;
+  return `<a href="${esc(href)}" class="nostr-person" title="${esc(shortNpub(ref.pubkey))}">@${esc(name)}</a>`;
+}
+
+function stripMarkup(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return div.textContent || '';
+}
+
+function decodeNip19(value) {
+  const bech = String(value ?? '').toLowerCase();
+  const pos = bech.lastIndexOf('1');
+  if (pos < 1 || pos + 7 > bech.length) return null;
+  const prefix = bech.slice(0, pos);
+  const payload = bech.slice(pos + 1, -6);
+  const words = [];
+  for (const ch of payload) {
+    const index = BECH32_CHARS.indexOf(ch);
+    if (index < 0) return null;
+    words.push(index);
+  }
+  return { prefix, bytes: convertBits(words, 5, 8, false) };
+}
+
+const BECH32_CHARS = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+
+function convertBits(data, fromBits, toBits, pad) {
+  let acc = 0;
+  let bits = 0;
+  const ret = [];
+  const maxv = (1 << toBits) - 1;
+  for (const value of data) {
+    if (value < 0 || (value >> fromBits)) return [];
+    acc = (acc << fromBits) | value;
+    bits += fromBits;
+    while (bits >= toBits) {
+      bits -= toBits;
+      ret.push((acc >> bits) & maxv);
+    }
+  }
+  if (pad && bits) ret.push((acc << (toBits - bits)) & maxv);
+  return ret;
+}
+
+function bytesToHex(bytes) {
+  return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function hexToBytes(hex) {
+  return String(hex ?? '').match(/.{1,2}/g)?.map(part => parseInt(part, 16)) ?? [];
+}
+
+function isHex(value, length = null) {
+  const text = String(value ?? '');
+  return /^[0-9a-f]+$/i.test(text) && (length === null || text.length === length);
+}
+
+function encodeNote(eventId) {
+  return nip19Encode('note', hexToBytes(eventId));
+}
+
+function encodeNprofile(pubkey, relays = []) {
+  const bytes = [0, 32, ...hexToBytes(pubkey)];
+  for (const relay of relays.filter(Boolean).slice(0, 3)) {
+    const encoded = [...new TextEncoder().encode(relay)];
+    bytes.push(1, encoded.length, ...encoded);
+  }
+  return nip19Encode('nprofile', bytes);
+}
+
+function nip19Encode(prefix, bytes) {
+  const words = convertBits(bytes, 8, 5, true);
+  const checksum = bech32CreateChecksum(prefix, words);
+  return `${prefix}1${[...words, ...checksum].map(i => BECH32_CHARS[i]).join('')}`;
+}
+
+function bech32CreateChecksum(prefix, words) {
+  const values = [...bech32HrpExpand(prefix), ...words, 0, 0, 0, 0, 0, 0];
+  const polymod = bech32Polymod(values) ^ 1;
+  const checksum = [];
+  for (let p = 0; p < 6; p++) checksum.push((polymod >> (5 * (5 - p))) & 31);
+  return checksum;
+}
+
+function bech32HrpExpand(prefix) {
+  const out = [];
+  for (let i = 0; i < prefix.length; i++) out.push(prefix.charCodeAt(i) >> 5);
+  out.push(0);
+  for (let i = 0; i < prefix.length; i++) out.push(prefix.charCodeAt(i) & 31);
+  return out;
+}
+
+function bech32Polymod(values) {
+  const generator = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let chk = 1;
+  for (const value of values) {
+    const top = chk >> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ value;
+    for (let i = 0; i < 5; i++) if ((top >> i) & 1) chk ^= generator[i];
+  }
+  return chk;
+}
+
+function esc(str) {
+  if (str === undefined || str === null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function setStatus(ok, text) {
+  const el = document.getElementById('status-bar');
+  el.className = `sidebar-status${ok ? '' : ' error'}`;
+  el.innerHTML = `<span class="dot"></span>${esc(text)}`;
+}
+
+function iconSvg(name) {
+  const icons = {
+    reload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>',
+    'arrow-left': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>',
+    reply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+    repost: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+    heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+    settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+    at: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+    'volume-x': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>',
+    zap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+    hash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>',
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    layers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+    globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+    inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+    image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+    pen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'
+  };
+  return icons[name] ?? '';
+}
+
+// -- init --
+boot();
+</script>
+
+</body>
+</html>
