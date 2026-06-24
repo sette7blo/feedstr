@@ -10,6 +10,18 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 let db = null;
 let dbPath = null;
+const stmtCache = new Map();
+
+// Compile each SQL once and reuse the prepared statement. Cleared whenever the
+// underlying database handle is (re)opened so statements never outlive their db.
+function prep(sql) {
+  let stmt = stmtCache.get(sql);
+  if (!stmt) {
+    stmt = getDb().prepare(sql);
+    stmtCache.set(sql, stmt);
+  }
+  return stmt;
+}
 
 export function getDbPath() {
   if (process.env.FEEDSTR_DB_STORE) return process.env.FEEDSTR_DB_STORE;
@@ -20,6 +32,7 @@ export function getDb() {
   const nextPath = getDbPath();
   if (db && dbPath === nextPath) return db;
   if (db) db.close();
+  stmtCache.clear();
   mkdirSync(dirname(nextPath), { recursive: true });
   db = new DatabaseSync(nextPath);
   dbPath = nextPath;
@@ -44,20 +57,19 @@ export function getDb() {
 }
 
 export function getStateValue(key) {
-  const row = getDb().prepare('SELECT value FROM state WHERE key = ?').get(key);
+  const row = prep('SELECT value FROM state WHERE key = ?').get(key);
   return row ? JSON.parse(row.value) : null;
 }
 
 export function setStateValue(key, value) {
-  getDb().prepare(`
+  prep(`
     INSERT INTO state (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `).run(key, JSON.stringify(value), new Date().toISOString());
 }
 
 export function getCachedNotes(columnId, limit = 500) {
-  return getDb()
-    .prepare('SELECT event_json FROM cached_notes WHERE column_id = ? ORDER BY created_at DESC LIMIT ?')
+  return prep('SELECT event_json FROM cached_notes WHERE column_id = ? ORDER BY created_at DESC LIMIT ?')
     .all(columnId, limit)
     .map((row) => JSON.parse(row.event_json));
 }
@@ -68,12 +80,13 @@ export function setCachedNotes(columnId, events) {
   const rows = (Array.isArray(events) ? events : [])
     .filter((event) => event && event.id)
     .slice(0, 500);
+  const del = prep('DELETE FROM cached_notes WHERE column_id = ?');
+  const insert = prep(
+    'INSERT OR REPLACE INTO cached_notes (column_id, event_id, created_at, event_json) VALUES (?, ?, ?, ?)'
+  );
   database.exec('BEGIN');
   try {
-    database.prepare('DELETE FROM cached_notes WHERE column_id = ?').run(columnId);
-    const insert = database.prepare(
-      'INSERT OR REPLACE INTO cached_notes (column_id, event_id, created_at, event_json) VALUES (?, ?, ?, ?)'
-    );
+    del.run(columnId);
     for (const event of rows) {
       insert.run(columnId, String(event.id), Number(event.created_at ?? 0), JSON.stringify(event));
     }
@@ -86,11 +99,12 @@ export function setCachedNotes(columnId, events) {
 }
 
 export function deleteCachedNotes(columnId) {
-  getDb().prepare('DELETE FROM cached_notes WHERE column_id = ?').run(columnId);
+  prep('DELETE FROM cached_notes WHERE column_id = ?').run(columnId);
 }
 
 export function closeDbForTests() {
   if (db) db.close();
   db = null;
   dbPath = null;
+  stmtCache.clear();
 }

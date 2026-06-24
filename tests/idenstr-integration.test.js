@@ -24,9 +24,13 @@ test('Feedstr signs through Idenstr instead of holding keys or calling admin pub
 
 test('Feedstr exposes Idenstr connection guidance and required scoped token permissions', async () => {
   const source = await readFile(html, 'utf8');
+  const serverSource = await readFile(server, 'utf8');
+  // The server is the single source of truth for the required scope list.
   for (const scope of ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235']) {
-    assert.match(source, new RegExp(scope.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(serverSource, new RegExp(scope.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+  // The frontend pulls the list from /api/v1/config rather than hardcoding it.
+  assert.match(source, /requiredIdenstrScopes = state\.config\.requiredIdenstrScopes/);
   assert.match(source, /Idenstr URL/);
   assert.match(source, /Idenstr token/);
   assert.match(source, /Private relay/);
@@ -57,7 +61,9 @@ test('composer can upload a device image through nostr.build and insert the retu
   assert.match(source, /appendComposeMediaUrl\(url\)/);
   assert.match(source, /Uploaded: \$\{url\}/);
   assert.match(serverSource, /'Content-Length': Buffer\.byteLength\(body\)/);
-  assert.match(serverSource, /'Connection': 'close'/);
+  // Responses keep a fixed Content-Length but no longer force-close the socket,
+  // so HTTP keep-alive stays on for the chatty API.
+  assert.doesNotMatch(serverSource, /'Connection': 'close'/);
   assert.match(serverSource, /url\.pathname === '\/api\/v1\/media\/upload'/);
   assert.match(serverSource, /nostrBuildUploadUrl = 'https:\/\/nostr\.build\/api\/v2\/nip96\/upload'/);
   assert.match(serverSource, /readRawBody\(req, 20 \* 1024 \* 1024\)/);
@@ -294,7 +300,7 @@ test('server supports Feedstr-specific Idenstr env names and never returns raw t
   assert.match(source, /FEEDSTR_IDENSTR_TOKEN/);
   assert.match(source, /url\.pathname === '\/api\/v1\/config'/);
   assert.match(source, /updateEnvFile/);
-  assert.match(source, /maskToken\(cfg\.idenstrToken\)|maskToken\(runtimeConfig\.idenstrToken\)/);
+  assert.match(source, /tokenStatusLabel\(cfg\.idenstrToken\)|tokenStatusLabel\(runtimeConfig\.idenstrToken\)/);
   assert.match(source, /return token \? 'configured' : ''/);
   assert.match(source, /\/api\/v1\/stack/);
   assert.doesNotMatch(source, /slice\(0, 8\).*slice\(-4\)/s);

@@ -140,13 +140,16 @@ const state = {
   composeMentions: []
 };
 
-const requiredIdenstrScopes = ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:5', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235'];
+// Populated from /api/v1/config at boot — Feedstr's server is the single source
+// of truth for the scope list, so it can't drift from a hardcoded frontend copy.
+let requiredIdenstrScopes = [];
 const profileDiscoveryRelays = ['wss://purplepag.es', 'wss://user.kindpag.es'];
 
 // -- boot --
 async function boot() {
   try {
     state.config = await api('/api/v1/config');
+    requiredIdenstrScopes = state.config.requiredIdenstrScopes ?? requiredIdenstrScopes;
     state.idenstrStatus = await api('/api/v1/idenstr/status');
     renderIdenstrSummary();
 
@@ -551,6 +554,7 @@ function connectRelay(url) {
 
   ws.onopen = () => {
     state.sockets.set(url, ws);
+    state._relayRetries?.delete(url);
     distributeSubscriptions();
     refreshVisibleMissingProfiles();
     // The private relay vaults every event you signed, so backfill your own
@@ -571,7 +575,13 @@ function connectRelay(url) {
 
   ws.onclose = () => {
     state.sockets.delete(url);
-    setTimeout(() => connectRelay(url), 5000);
+    if (!state._relayRetries) state._relayRetries = new Map();
+    const attempts = (state._relayRetries.get(url) ?? 0) + 1;
+    state._relayRetries.set(url, attempts);
+    // Exponential backoff with jitter, capped at 30s, so a dead relay isn't
+    // reconnected every 5s indefinitely.
+    const delay = Math.min(30000, 1000 * 2 ** Math.min(attempts, 5)) + Math.random() * 1000;
+    setTimeout(() => connectRelay(url), delay);
   };
 
   ws.onerror = () => ws.close();
@@ -647,6 +657,19 @@ function unsubscribe(subId) {
   sendToAll(['CLOSE', subId]);
 }
 
+// Insert into an array kept sorted descending by created_at, using binary search
+// for the position. Avoids re-sorting the whole column on every incoming event.
+function insertEventSorted(events, event) {
+  const ts = event.created_at ?? 0;
+  let lo = 0, hi = events.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((events[mid].created_at ?? 0) > ts) lo = mid + 1;
+    else hi = mid;
+  }
+  events.splice(lo, 0, event);
+}
+
 // -- event handling --
 function handleEvent(subId, event) {
   if (!event || !event.id) return;
@@ -705,6 +728,12 @@ function handleEvent(subId, event) {
         const next = { ...profile, created_at: event.created_at };
         changed = profileDisplayChanged(existing, next);
         state.profiles.set(event.pubkey, next);
+        // Profile is now complete — stop tracking retries for it so these guard
+        // sets stay bounded to pubkeys we're still chasing.
+        if (next.picture) {
+          state.profileFetchAttempts.delete(event.pubkey);
+          state.profileFetchTried.delete(event.pubkey);
+        }
       } catch {}
     }
     if (changed) {
@@ -721,10 +750,15 @@ function handleEvent(subId, event) {
   if (!col) return;
 
   if (!col.events) col.events = [];
-  if (col.events.some(e => e.id === event.id)) return;
-  col.events.push(event);
-  col.events.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
-  if (col.events.length > 500) col.events = col.events.slice(0, 500);
+  if (!col._ids) col._ids = new Set(col.events.map(e => e.id));
+  if (col._ids.has(event.id)) return;
+  col._ids.add(event.id);
+  // Keep the array sorted-desc by created_at with O(log n) placement instead of a
+  // full re-sort on every event; trim the oldest past the 500 cap.
+  insertEventSorted(col.events, event);
+  if (col.events.length > 500) {
+    for (const e of col.events.splice(500)) col._ids.delete(e.id);
+  }
 
   // queue profile fetch for visible actors whose cache is missing or lacks an avatar.
   // Idenstr's following directory can provide names without pictures, so presence
@@ -807,17 +841,37 @@ function scheduleProfileFetch() {
   }, 350);
 }
 
+// Coalesce the full column scan: every relay that connects calls this, so at boot
+// a dozen sockets would otherwise each walk all events. One pass covers them all.
+let _missingProfilesTimer = null;
 function refreshVisibleMissingProfiles() {
-  for (const col of state.columns) {
-    for (const event of col.events ?? []) {
-      for (const pubkey of getEventProfilePubkeys(event)) {
-        if (profileNeedsRefresh(pubkey)) queueProfileFetch(pubkey);
+  if (_missingProfilesTimer) return;
+  _missingProfilesTimer = setTimeout(() => {
+    _missingProfilesTimer = null;
+    for (const col of state.columns) {
+      for (const event of col.events ?? []) {
+        for (const pubkey of getEventProfilePubkeys(event)) {
+          if (profileNeedsRefresh(pubkey)) queueProfileFetch(pubkey);
+        }
       }
     }
-  }
+  }, 300);
 }
 
+// Parsing an event's referenced profile pubkeys means a regex pass over its
+// content, and this runs across every event in every column on each profile
+// update — so memoize the result per event id (an event is immutable).
+const _profilePubkeyCache = new Map();
 function getEventProfilePubkeys(event) {
+  if (!event?.id) return computeEventProfilePubkeys(event);
+  const cached = _profilePubkeyCache.get(event.id);
+  if (cached) return cached;
+  const result = computeEventProfilePubkeys(event);
+  _profilePubkeyCache.set(event.id, result);
+  return result;
+}
+
+function computeEventProfilePubkeys(event) {
   const pubkeys = new Set();
   const actorPubkey = getEventActorPubkey(event);
   if (actorPubkey) pubkeys.add(actorPubkey);
@@ -919,36 +973,38 @@ function renderColumns() {
   container.innerHTML = '';
   const listEl = document.getElementById('column-list');
   listEl.innerHTML = '';
-
-  for (const col of state.columns) {
-    // sidebar entry
-    const sideItem = document.createElement('button');
-    sideItem.className = 'sidebar-item';
-    sideItem.textContent = col.name;
-    sideItem.onclick = () => {
-      closeMobileMenu();
-      document.querySelector(`[data-col="${col.id}"]`)?.scrollIntoView({ behavior: 'smooth', inline: 'start' });
-    };
-    listEl.appendChild(sideItem);
-
-    // column element
-    const colEl = document.createElement('div');
-    colEl.className = 'column';
-    colEl.dataset.col = col.id;
-    colEl.innerHTML = `
-      <div class="column-header">${columnHeaderHtml(col)}</div>
-      <div class="column-feed">
-        ${emptyState('Waiting for notes', 'Live updates will appear here')}
-      </div>
-    `;
-    wireColumnHeader(colEl, col);
-    container.appendChild(colEl);
-
-    // start subscription
-    if (!col.events) col.events = [];
-    startColumnSub(col);
-  }
+  for (const col of state.columns) buildColumnDom(col, container, listEl);
   saveColumns();
+}
+
+// Build the sidebar entry, column element, and subscription for a single column.
+// Used both for the full render (boot) and for appending one new column, so
+// adding a column doesn't tear down and re-subscribe every other column.
+function buildColumnDom(col, container, listEl) {
+  const sideItem = document.createElement('button');
+  sideItem.className = 'sidebar-item';
+  sideItem.dataset.sideCol = col.id;
+  sideItem.textContent = col.name;
+  sideItem.onclick = () => {
+    closeMobileMenu();
+    document.querySelector(`.column[data-col="${col.id}"]`)?.scrollIntoView({ behavior: 'smooth', inline: 'start' });
+  };
+  listEl.appendChild(sideItem);
+
+  const colEl = document.createElement('div');
+  colEl.className = 'column';
+  colEl.dataset.col = col.id;
+  colEl.innerHTML = `
+    <div class="column-header">${columnHeaderHtml(col)}</div>
+    <div class="column-feed">
+      ${emptyState('Waiting for notes', 'Live updates will appear here')}
+    </div>
+  `;
+  wireColumnHeader(colEl, col);
+  container.appendChild(colEl);
+
+  if (!col.events) col.events = [];
+  startColumnSub(col);
 }
 
 // Column header swaps to a "Thread" + back-arrow layout while a conversation is
@@ -2004,11 +2060,13 @@ document.addEventListener('keydown', (e) => {
   if (modal.classList.contains('open')) closeModal();
 });
 
-// Relative timestamps go stale ("5m" forever); re-stamp every minute.
+// Relative timestamps go stale ("5m" forever); re-stamp every minute. Piggyback
+// the periodic memory prune on the same tick.
 setInterval(() => {
   document.querySelectorAll('.note-time[data-ts]').forEach(el => {
     el.textContent = relativeTime(Number(el.dataset.ts));
   });
+  pruneMemory();
 }, 60000);
 
 composeText.addEventListener('input', () => {
@@ -2596,8 +2654,10 @@ function scrollColumnIntoView(id) {
 
 function addColumn(config) {
   const id = genId();
-  state.columns.push({ id, events: [], ...config });
-  renderColumns();
+  const col = { id, events: [], ...config };
+  state.columns.push(col);
+  buildColumnDom(col, document.getElementById('columns'), document.getElementById('column-list'));
+  saveColumns();
   scrollColumnIntoView(id);
   return id;
 }
@@ -2702,6 +2762,7 @@ function removeColumnCache(id) {
 
 function reloadColumn(col) {
   col.events = [];
+  col._ids = new Set();
   renderColumnFeed(col);
   startColumnSub(col);
 }
@@ -2713,7 +2774,10 @@ function removeColumn(id) {
   unsubscribe(`thread_replies_${id}`);
   state.columns = state.columns.filter(c => c.id !== id);
   removeColumnCache(id);
-  renderColumns();
+  document.querySelector(`.column[data-col="${id}"]`)?.remove();
+  document.querySelector(`#column-list [data-side-col="${id}"]`)?.remove();
+  pruneMemory();
+  saveColumns();
 }
 
 const DEFAULT_COLUMNS = () => [
@@ -2743,7 +2807,16 @@ async function loadColumns() {
 }
 
 async function persistColumns(columns) {
-  const serializable = columns.map(({ events, ...rest }) => rest);
+  // Persist only column configuration; everything else (events, dedup set, open
+  // thread, scroll markers) is runtime state that must not survive a reload.
+  const serializable = columns.map((c) => {
+    const out = { id: c.id, type: c.type, name: c.name };
+    if (c.pubkey) out.pubkey = c.pubkey;
+    if (c.pubkeys) out.pubkeys = c.pubkeys;
+    if (c.tag) out.tag = c.tag;
+    if (c.notificationFilter) out.notificationFilter = c.notificationFilter;
+    return out;
+  });
   try {
     await api('/api/v1/state/columns', { method: 'PUT', body: { value: serializable } });
   } catch (err) {
@@ -3087,12 +3160,33 @@ function saveColumns() {
 const cacheTimers = new Map();
 function scheduleCacheColumn(col) {
   if (!col?.id) return;
-  clearTimeout(cacheTimers.get(col.id));
+  col._cacheDirty = true;
+  // Coalesce: at most one snapshot write per 5s window per column, no matter how
+  // fast events stream. Each write rewrites the whole snapshot, so this caps the
+  // churn instead of rewriting on every burst.
+  if (cacheTimers.has(col.id)) return;
   cacheTimers.set(col.id, setTimeout(() => {
     cacheTimers.delete(col.id);
-    api(`/api/v1/cache/${col.id}`, { method: 'PUT', body: { events: col.events ?? [] } }).catch(() => {});
-  }, 1500));
+    flushColumnCache(col);
+  }, 5000));
 }
+
+function flushColumnCache(col) {
+  if (!col?.id || !col._cacheDirty) return;
+  col._cacheDirty = false;
+  api(`/api/v1/cache/${col.id}`, { method: 'PUT', body: { events: (col.events ?? []).slice(0, 500) } }).catch(() => {});
+}
+
+// Persist pending snapshots when the tab is backgrounded or closed, so a fast
+// streaming column isn't lost between coalesce windows (covers mobile too).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') return;
+  for (const col of state.columns) {
+    clearTimeout(cacheTimers.get(col.id));
+    cacheTimers.delete(col.id);
+    flushColumnCache(col);
+  }
+});
 
 async function hydrateColumnCache(col) {
   if (!col?.id) return;
@@ -3101,10 +3195,34 @@ async function hydrateColumnCache(col) {
     if (!Array.isArray(events) || !events.length) return;
     if (!col.events) col.events = [];
     const seen = new Set(col.events.map(e => e.id));
-    for (const event of events) if (!seen.has(event.id)) col.events.push(event);
+    for (const event of events) if (!seen.has(event.id)) { col.events.push(event); seen.add(event.id); }
     col.events.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
+    if (col.events.length > 500) col.events = col.events.slice(0, 500);
+    col._ids = new Set(col.events.map(e => e.id));
     renderColumnFeed(col);
   } catch {}
+}
+
+// Bound the long-lived in-memory caches. Notes and engagement counts accumulate
+// as events stream in, so a tab left open for hours would grow without limit.
+const NOTE_CACHE_LIMIT = 5000;
+function pruneMemory() {
+  const live = new Set();
+  for (const col of state.columns) for (const e of col.events ?? []) live.add(e.id);
+  // Reply/reaction/repost counts only matter for notes a column still shows.
+  for (const map of [state.replyCounts, state.reactionCounts, state.repostCounts]) {
+    for (const id of map.keys()) if (!live.has(id)) map.delete(id);
+  }
+  // Trim the global note cache oldest-first, protecting notes still on screen.
+  if (state.notes.size > NOTE_CACHE_LIMIT) {
+    for (const id of state.notes.keys()) {
+      if (state.notes.size <= NOTE_CACHE_LIMIT) break;
+      if (live.has(id)) continue;
+      state.notes.delete(id);
+      _profilePubkeyCache.delete(id);
+      state.embeddedEventFetchTried.delete(id);
+    }
+  }
 }
 
 // -- helpers --

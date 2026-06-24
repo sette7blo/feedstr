@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { readFile, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +31,7 @@ async function route(req, res) {
       app: 'feedstr',
       idenstrUrl: cfg.idenstrUrl,
       idenstrTokenConfigured: Boolean(cfg.idenstrToken),
-      idenstrTokenPreview: maskToken(cfg.idenstrToken),
+      idenstrTokenPreview: tokenStatusLabel(cfg.idenstrToken),
       privateRelayUrl: cfg.privateRelayUrl,
       requiredIdenstrScopes,
       envWritable: true
@@ -82,7 +83,8 @@ async function route(req, res) {
   }
 
   if (req.method === 'GET' || req.method === 'HEAD') {
-    return serveStatic(url.pathname, res, req.method === 'HEAD');
+    const acceptsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] ?? '');
+    return serveStatic(url.pathname, res, req.method === 'HEAD', acceptsGzip);
   }
 
   sendJson(res, 404, { error: 'not_found' });
@@ -226,7 +228,7 @@ async function saveConfig(res, body) {
       config: {
         idenstrUrl: runtimeConfig.idenstrUrl,
         idenstrTokenConfigured: Boolean(runtimeConfig.idenstrToken),
-        idenstrTokenPreview: maskToken(runtimeConfig.idenstrToken),
+        idenstrTokenPreview: tokenStatusLabel(runtimeConfig.idenstrToken),
         privateRelayUrl: runtimeConfig.privateRelayUrl
       },
       envFile: next.path
@@ -329,7 +331,7 @@ async function idenstrStatus(res) {
   sendJson(res, 200, {
     idenstrUrl: cfg.idenstrUrl,
     tokenConfigured: Boolean(cfg.idenstrToken),
-    tokenPreview: maskToken(cfg.idenstrToken),
+    tokenPreview: tokenStatusLabel(cfg.idenstrToken),
     requiredScopes: requiredIdenstrScopes,
     grantedScopes: granted,
     missingScopes,
@@ -340,18 +342,26 @@ async function idenstrStatus(res) {
   });
 }
 
-function maskToken(token) {
+function tokenStatusLabel(token) {
   return token ? 'configured' : '';
 }
 
-async function serveStatic(pathname, res, headOnly = false) {
+async function serveStatic(pathname, res, headOnly = false, acceptsGzip = false) {
   const normalized = pathname === '/' ? '/index.html' : pathname;
   if (normalized.includes('..')) return sendJson(res, 400, { error: 'bad_path' });
   const filePath = join(publicDir, normalized);
   try {
     const data = await readFile(filePath);
-    res.writeHead(200, { 'Content-Type': contentType(filePath), 'Cache-Control': cacheControl(filePath) });
-    if (headOnly) return res.end();
+    const type = contentType(filePath);
+    const headers = { 'Content-Type': type, 'Cache-Control': cacheControl(filePath), 'Vary': 'Accept-Encoding' };
+    const compressible = /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg)/.test(type);
+    if (headOnly) { res.writeHead(200, headers); return res.end(); }
+    if (acceptsGzip && compressible && data.length > 1024) {
+      headers['Content-Encoding'] = 'gzip';
+      res.writeHead(200, headers);
+      return res.end(gzipSync(data));
+    }
+    res.writeHead(200, headers);
     res.end(data);
   } catch (err) {
     if (err.code === 'ENOENT') return sendJson(res, 404, { error: 'not_found' });
@@ -379,9 +389,18 @@ function cacheControl(filePath) {
   return 'public, max-age=3600';
 }
 
-async function readJson(req) {
+async function readJson(req, maxBytes = 16 * 1024 * 1024) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      const err = new Error('Request body too large');
+      err.code = 'body_too_large';
+      throw err;
+    }
+    chunks.push(chunk);
+  }
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
@@ -391,8 +410,7 @@ function sendJson(res, status, payload) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store',
-    'Connection': 'close'
+    'Cache-Control': 'no-store'
   });
   res.end(body);
 }
