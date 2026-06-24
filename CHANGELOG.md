@@ -11,6 +11,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.1.0] — 2026-06-24
+
 - Feedstr now reads Idenstr's kind:10000 mute list (`mutes:read`) and writes thread/profile/keyword mutes back through Idenstr (`mutes:write`). Muted people, threads/events, hashtags, and words are filtered through one shared predicate across normal feeds, thread replies, notification rows, and notification filter counts, so muted conversations no longer leak through Notifications. Note rows include a Mute thread action with a muted-speaker icon, and profile columns include a Mute/Muted toggle that optimistically updates Idenstr's pubkey mute list.
 - Inline reply boxes now support device image uploads, matching the main composer: the reply drawer has a Photo button, uploads images through Feedstr to nostr.build with Idenstr-signed NIP-98 authorization, inserts the returned image URL into the reply textarea, and shows upload status/errors inline.
 - Reply boxes no longer disappear while you are typing when new relay events/profile updates trigger feed reconciliation. Inline reply drawers are now keyed to the note they belong to and are preserved/repositioned with the note instead of being treated as stray DOM and removed.
@@ -56,4 +58,5 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/commits/HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.1.0...HEAD
+[v0.1.0]: https://github.com/sette7blo/feedstr/releases/tag/v0.1.0
