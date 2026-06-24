@@ -11,6 +11,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Performance and memory hardening. The in-memory note and engagement-count caches are now bounded (a tab left open for hours no longer grows without limit), per-event full re-sorts are replaced with sorted inserts plus O(1) dedup, profile-reference parsing is memoized, and redundant full-column scans on every relay connect are coalesced. The dashboard's static assets are gzip-compressed, HTTP keep-alive is enabled for the API, per-column cache writes are throttled (with a flush when the tab is backgrounded), prepared SQL statements are reused, and dead relays reconnect with exponential backoff instead of a flat 5s retry.
+
 ## [v0.1.0] — 2026-06-24
 
 - Feedstr now reads Idenstr's kind:10000 mute list (`mutes:read`) and writes thread/profile/keyword mutes back through Idenstr (`mutes:write`). Muted people, threads/events, hashtags, and words are filtered through one shared predicate across normal feeds, thread replies, notification rows, and notification filter counts, so muted conversations no longer leak through Notifications. Note rows include a Mute thread action with a muted-speaker icon, and profile columns include a Mute/Muted toggle that optimistically updates Idenstr's pubkey mute list.
