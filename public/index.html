@@ -386,23 +386,12 @@ function showIdenstrSettings(reason = '') {
     const term = input.value.trim().toLowerCase();
     input.value = '';
     if (!term || muteEntriesByType('keyword').some(entry => entry.value === term)) return;
-    state.mutes.entries.push({ id: `local-${Date.now()}`, type: 'keyword', value: term, label: '', addedAt: new Date().toISOString() });
-    refreshMuteSets();
-    persistMutes();
-    renderMuteList();
-    scheduleRerenderAllColumns();
-    toast(`Muted "${term}"`, 'success');
+    muteKeyword(term);
   });
   document.getElementById('mute-list').addEventListener('click', (e) => {
     const btn = e.target.closest('.mute-remove');
     if (!btn) return;
-    const term = btn.dataset.mute;
-    state.mutes.entries = (state.mutes.entries ?? []).filter(m => !(m.type === 'keyword' && m.value === term));
-    refreshMuteSets();
-    persistMutes();
-    renderMuteList();
-    scheduleRerenderAllColumns();
-    toast(`Unmuted "${term}"`, 'success');
+    unmuteKeyword(btn.dataset.mute);
   });
 
   modal.classList.add('open');
@@ -2808,10 +2797,42 @@ function muteEntriesByType(type) {
   return (state.mutes?.entries ?? []).filter(entry => entry.type === type);
 }
 
-function persistMutes() {
-  api('/api/v1/idenstr/mutes', { method: 'PUT', body: { entries: state.mutes.entries } })
-    .catch(() => api('/api/v1/state/mutes', { method: 'PUT', body: { value: state.mutes } })
-      .catch(err => console.warn('Failed to save mutes', err.message)));
+// Keyword mutes publish through Idenstr's signed kind:10000 list, exactly like
+// profile and thread mutes, so a muted word reaches the relays and other clients
+// instead of sitting as an unpublished local draft. Optimistic with rollback.
+async function muteKeyword(term) {
+  state.mutes.entries.push({ id: `local-${Date.now()}`, type: 'keyword', value: term, label: '', addedAt: new Date().toISOString() });
+  refreshMuteSets();
+  renderMuteList();
+  scheduleRerenderAllColumns();
+  try {
+    await api('/api/v1/idenstr/mutes/mute', { method: 'POST', body: { type: 'keyword', value: term } });
+    toast(`Muted "${term}"`, 'success');
+  } catch (err) {
+    state.mutes.entries = (state.mutes.entries ?? []).filter(m => !(m.type === 'keyword' && m.value === term));
+    refreshMuteSets();
+    renderMuteList();
+    scheduleRerenderAllColumns();
+    toast(muteError(err), 'error');
+  }
+}
+
+async function unmuteKeyword(term) {
+  const removed = (state.mutes.entries ?? []).filter(m => m.type === 'keyword' && m.value === term);
+  state.mutes.entries = (state.mutes.entries ?? []).filter(m => !(m.type === 'keyword' && m.value === term));
+  refreshMuteSets();
+  renderMuteList();
+  scheduleRerenderAllColumns();
+  try {
+    await api('/api/v1/idenstr/mutes/unmute', { method: 'POST', body: { idOrValue: term } });
+    toast(`Unmuted "${term}"`, 'success');
+  } catch (err) {
+    state.mutes.entries.push(...removed);
+    refreshMuteSets();
+    renderMuteList();
+    scheduleRerenderAllColumns();
+    toast(muteError(err), 'error');
+  }
 }
 
 function isMuted(event) {
