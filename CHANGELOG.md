@@ -11,6 +11,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Fixed a latent bug in the prepared-statement cache: it now re-resolves the database on every call, so a cached statement can never outlive its database handle if the data path changes at runtime. No effect on a normal single-path deployment.
+
 ## [v0.1.1] — 2026-06-24
 
 - Performance and memory hardening. The in-memory note and engagement-count caches are now bounded (a tab left open for hours no longer grows without limit), per-event full re-sorts are replaced with sorted inserts plus O(1) dedup, profile-reference parsing is memoized, and redundant full-column scans on every relay connect are coalesced. The dashboard's static assets are gzip-compressed, HTTP keep-alive is enabled for the API, per-column cache writes are throttled (with a flush when the tab is backgrounded), prepared SQL statements are reused, and dead relays reconnect with exponential backoff instead of a flat 5s retry.

@@ -12,12 +12,14 @@ let db = null;
 let dbPath = null;
 const stmtCache = new Map();
 
-// Compile each SQL once and reuse the prepared statement. Cleared whenever the
-// underlying database handle is (re)opened so statements never outlive their db.
+// Compile each SQL once and reuse the prepared statement. Always resolve the db
+// first: getDb() detects a path change and clears the cache, so a cached
+// statement can never outlive its database.
 function prep(sql) {
+  const database = getDb();
   let stmt = stmtCache.get(sql);
   if (!stmt) {
-    stmt = getDb().prepare(sql);
+    stmt = database.prepare(sql);
     stmtCache.set(sql, stmt);
   }
   return stmt;
