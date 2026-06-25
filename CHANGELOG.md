@@ -11,6 +11,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.1.2] — 2026-06-25
+
 - Fixed a latent bug in the prepared-statement cache: it now re-resolves the database on every call, so a cached statement can never outlive its database handle if the data path changes at runtime. No effect on a normal single-path deployment.
 
 ## [v0.1.1] — 2026-06-24
@@ -64,6 +66,7 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.1.2...HEAD
+[v0.1.2]: https://github.com/sette7blo/feedstr/compare/v0.1.1...v0.1.2
 [v0.1.1]: https://github.com/sette7blo/feedstr/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/sette7blo/feedstr/releases/tag/v0.1.0
