@@ -11,6 +11,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.2.0] — 2026-07-01
+
 - Simplified Feedstr settings access: removed the awkward top-right mobile `Idenstr` button and made the bottom-left sidebar chip the single Settings entry with a gear icon plus Idenstr connection status as secondary text.
 
 - Improved zap address discovery: Feedstr now keeps the full Idenstr directory profile payload when seeding its cache, checks additional common/non-standard kind:0 zap fields (`lightning`, `lnurl`, `lnurlp`, `zapAddress`, nested zap objects), strips `lightning:` URI prefixes, and updates status copy from the overly narrow `lud16/lud06` wording to `zap address`.
@@ -84,7 +86,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.2.0...HEAD
+[v0.2.0]: https://github.com/sette7blo/feedstr/compare/v0.1.2...v0.2.0
 [v0.1.2]: https://github.com/sette7blo/feedstr/compare/v0.1.1...v0.1.2
 [v0.1.1]: https://github.com/sette7blo/feedstr/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/sette7blo/feedstr/releases/tag/v0.1.0
