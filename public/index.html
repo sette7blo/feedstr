@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico?v=feedstr-fd-logo" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png?v=feedstr-fd-logo" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=feedstr-fd-logo" />
-  <link rel="stylesheet" href="./styles.css?v=mobile-input-zoom-fix-2" />
+  <link rel="stylesheet" href="./styles.css?v=mobile-drawer-half-1" />
 </head>
 <body>
 
@@ -25,7 +25,7 @@
     <img class="brand-logo" src="./icons/header-logo.png?v=feedstr-fd-logo" width="26" height="26" alt="" />
     <span class="brand-name">Feed<span class="brand-name-accent">str</span></span>
   </div>
-  <button class="mobile-stack-button" id="mobile-stack-btn" type="button">Idenstr</button>
+  <span class="mobile-topbar-spacer" aria-hidden="true"></span>
 </header>
 <div class="mobile-menu-backdrop" id="mobile-menu-backdrop"></div>
 
@@ -55,12 +55,16 @@
     </div>
 
     <div class="sidebar-footer">
-      <button class="connection-chip" id="idenstr-settings-btn" type="button" title="Stack status and settings">
-        <span class="connection-chip-main" id="idenstr-summary">
-          <span class="connection-dot"></span>
-          <span class="connection-chip-text">Checking connection&hellip;</span>
+      <button class="connection-chip" id="idenstr-settings-btn" type="button" title="Open Feedstr settings" aria-label="Open Feedstr settings">
+        <span class="connection-chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.31.22.65.22 1H21a2 2 0 0 1 0 4h-1.38c0 .35-.08.69-.22 1z"/></svg></span>
+        <span class="connection-chip-main">
+          <span class="connection-chip-label">Settings</span>
+          <span class="connection-chip-status" id="idenstr-summary">
+            <span class="connection-dot"></span>
+            <span class="connection-chip-text">Checking Idenstr&hellip;</span>
+          </span>
         </span>
-        <svg class="connection-chip-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        <svg class="connection-chip-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
       </button>
       <div class="sidebar-status" id="status-bar">
         <span class="dot"></span>Connecting...
@@ -137,7 +141,8 @@ const state = {
   config: null,
   idenstrStatus: null,
   composeMentionIndex: [],
-  composeMentions: []
+  composeMentions: [],
+  zapDefaultSats: 100 // one-tap zap amount; overridden from the state store at boot
 };
 
 // Populated from /api/v1/config at boot — Feedstr's server is the single source
@@ -185,14 +190,18 @@ async function boot() {
     }));
     refreshFollowingSet();
 
-    // seed profile cache from directory
+    // Seed profile cache from Idenstr's directory. Keep the full profile payload
+    // when available so zap fields such as lud16/lud06/lightningAddress are not
+    // discarded before Feedstr's own kind:0 refresh runs.
     for (const e of directory) {
       if (e.pubkey) {
+        const profile = e.profile ?? {};
         state.profiles.set(e.pubkey, {
-          name: e.name ?? '',
-          display_name: e.name ?? '',
-          picture: e.picture ?? '',
-          created_at: 0
+          ...profile,
+          name: profile.name ?? e.name ?? '',
+          display_name: profile.display_name ?? profile.displayName ?? e.name ?? '',
+          picture: profile.picture ?? e.picture ?? '',
+          created_at: profile.created_at ?? e.profileEvent?.created_at ?? 0
         });
       }
     }
@@ -205,6 +214,7 @@ async function boot() {
     // load saved columns from Feedstr's DB, migrating any older localStorage copy
     state.columns = await loadColumns();
     state.liked = await loadLiked();
+    state.zapDefaultSats = await loadZapDefault();
     state.mutes = normalizeMutes(mutesResponse || await loadMutes());
     refreshMuteSets();
     renderColumns();
@@ -244,19 +254,19 @@ function renderIdenstrSummary(error = null) {
   const cfg = state.config;
   const status = state.idenstrStatus;
   let stateClass = 'warn';
-  let text = 'Checking connection…';
+  let text = 'Checking Idenstr…';
   if (error) {
     stateClass = 'error';
     text = 'Idenstr unreachable';
   } else if (!cfg) {
     stateClass = 'warn';
-    text = 'Idenstr · not checked';
+    text = 'Idenstr not checked';
   } else if (status?.ok) {
     stateClass = 'ok';
-    text = 'Idenstr linked';
+    text = 'Idenstr connected';
   } else {
     stateClass = 'warn';
-    text = cfg.idenstrTokenConfigured ? 'Idenstr · setup needed' : 'Idenstr · token missing';
+    text = cfg.idenstrTokenConfigured ? 'Idenstr setup needed' : 'Idenstr token missing';
   }
   if (chip) chip.className = `connection-chip ${stateClass}`;
   el.innerHTML = `<span class="connection-dot"></span><span class="connection-chip-text">${esc(text)}</span>`;
@@ -364,6 +374,16 @@ function showIdenstrSettings(reason = '') {
     </div>
 
     <div class="connection-section">
+      <div class="subsection-head"><span>Zaps</span><small>one-tap default</small></div>
+      <p class="settings-copy">Tapping the lightning bolt on a note instantly zaps this amount through Idenstr's wallet. Hold the bolt (or right-click) to choose a custom amount and add a comment.</p>
+      <form id="zap-default-form" class="relay-input-row">
+        <input id="zap-default-input" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${esc(String(state.zapDefaultSats ?? 100))}" aria-label="Default zap amount in sats" />
+        <button class="btn btn-ghost" type="submit">Save</button>
+      </form>
+      <div id="zap-default-status" class="terminal-mini hidden"></div>
+    </div>
+
+    <div class="connection-section">
       <div class="subsection-head"><span>Muted keywords</span><small>${muteEntriesByType('keyword').length} active</small></div>
       <p class="settings-copy">Notes containing any of these words are hidden from every feed.</p>
       <form id="mute-add-form" class="relay-input-row">
@@ -381,6 +401,24 @@ function showIdenstrSettings(reason = '') {
   document.getElementById('settings-recheck').onclick = recheckIdenstrSettings;
   document.getElementById('relay-test-btn').onclick = testRelayConnection;
   document.getElementById('idenstr-config-form').addEventListener('submit', saveIdenstrSettings);
+
+  document.getElementById('zap-default-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('zap-default-input');
+    const status = document.getElementById('zap-default-status');
+    const amount = Math.round(Number(input.value.trim()));
+    status.classList.remove('hidden');
+    if (!Number.isFinite(amount) || amount < 1 || amount > 100000) {
+      status.className = 'terminal-mini error';
+      status.textContent = '$ feedstr zap\nerror: enter a whole number of sats between 1 and 100000';
+      return;
+    }
+    state.zapDefaultSats = amount;
+    input.value = String(amount);
+    persistZapDefault();
+    status.className = 'terminal-mini ok';
+    status.textContent = `$ feedstr zap\nsaved: one tap now sends ${amount} sats`;
+  });
 
   renderMuteList();
   document.getElementById('mute-add-form').addEventListener('submit', (e) => {
@@ -737,6 +775,7 @@ function handleEvent(subId, event) {
       } catch {}
     }
     if (changed) {
+      updateOpenZapModal(event.pubkey);
       rerenderColumnsForAuthor(event.pubkey);
       rerenderColumnsForReferencedProfile(event.pubkey);
     }
@@ -797,23 +836,27 @@ function handleEose(subId) {
 
 // -- on-demand profile fetch for visible note authors --
 let _profileTimer = null;
-function profileNeedsRefresh(pubkey) {
+function profileNeedsRefresh(pubkey, options = {}) {
   if (!pubkey) return false;
   const profile = state.profiles.get(pubkey);
   const attempts = state.profileFetchAttempts.get(pubkey) ?? 0;
-  return (!profile || !profile.picture) && attempts < 4;
+  const needsCoreProfile = !profile || !profile.picture;
+  const needsZapAddress = Boolean(options.needZap) && !zapAddressForProfile(profile ?? {});
+  return (needsCoreProfile || needsZapAddress) && attempts < 4;
 }
 
 function profileDisplayChanged(existing, next) {
   if (!existing) return true;
-  const fields = ['name', 'display_name', 'displayName', 'picture'];
-  return fields.some(field => (existing?.[field] ?? '') !== (next?.[field] ?? ''));
+  const fields = ['name', 'display_name', 'displayName', 'picture', ...ZAP_ADDRESS_FIELD_NAMES];
+  return fields.some(field => (existing?.[field] ?? '') !== (next?.[field] ?? '')) || zapAddressForProfile(existing) !== zapAddressForProfile(next);
 }
 
-function queueProfileFetch(pubkey) {
-  if (!profileNeedsRefresh(pubkey)) return;
+function queueProfileFetch(pubkey, options = {}) {
+  if (!options.force && !profileNeedsRefresh(pubkey, options)) return;
   if (!state._profileQueue) state._profileQueue = new Set();
+  if (!state._profileForceQueue) state._profileForceQueue = new Set();
   state._profileQueue.add(pubkey);
+  if (options.force) state._profileForceQueue.add(pubkey);
   scheduleProfileFetch();
 }
 
@@ -823,9 +866,11 @@ function scheduleProfileFetch() {
     _profileTimer = null;
     const queue = state._profileQueue;
     if (!queue || !queue.size) return;
-    const pubkeys = [...queue].filter(profileNeedsRefresh).slice(0, 50);
+    const forceQueue = state._profileForceQueue ?? new Set();
+    const pubkeys = [...queue].filter(pubkey => forceQueue.has(pubkey) || profileNeedsRefresh(pubkey)).slice(0, 50);
     for (const pubkey of pubkeys) {
       queue.delete(pubkey);
+      forceQueue.delete(pubkey);
       state.profileFetchTried.add(pubkey);
       state.profileFetchAttempts.set(pubkey, (state.profileFetchAttempts.get(pubkey) ?? 0) + 1);
     }
@@ -981,14 +1026,31 @@ function renderColumns() {
 // Used both for the full render (boot) and for appending one new column, so
 // adding a column doesn't tear down and re-subscribe every other column.
 function buildColumnDom(col, container, listEl) {
-  const sideItem = document.createElement('button');
-  sideItem.className = 'sidebar-item';
+  const sideItem = document.createElement('div');
+  sideItem.className = 'sidebar-column-item';
   sideItem.dataset.sideCol = col.id;
-  sideItem.textContent = col.name;
-  sideItem.onclick = () => {
+
+  const jumpButton = document.createElement('button');
+  jumpButton.className = 'sidebar-item sidebar-column-jump';
+  jumpButton.type = 'button';
+  jumpButton.innerHTML = `<span class="sidebar-column-name">${esc(col.name)}</span>`;
+  jumpButton.onclick = () => {
     closeMobileMenu();
     document.querySelector(`.column[data-col="${col.id}"]`)?.scrollIntoView({ behavior: 'smooth', inline: 'start' });
   };
+
+  const closeButton = document.createElement('button');
+  closeButton.className = 'sidebar-column-close';
+  closeButton.type = 'button';
+  closeButton.title = `Close ${col.name}`;
+  closeButton.setAttribute('aria-label', `Close ${col.name} column`);
+  closeButton.innerHTML = iconSvg('x');
+  closeButton.onclick = (event) => {
+    event.stopPropagation();
+    removeColumn(col.id);
+  };
+
+  sideItem.append(jumpButton, closeButton);
   listEl.appendChild(sideItem);
 
   const colEl = document.createElement('div');
@@ -1585,6 +1647,7 @@ function renderNote(event, opts = {}) {
       <button class="note-action" data-action="reply" title="Reply">${iconSvg('reply')}<span>${replyCountLabel(event.id)}</span></button>
       <button class="note-action" data-action="repost" title="Repost">${iconSvg('repost')}<span>${repostCountLabel(event.id)}</span></button>
       <button class="note-action" data-action="quote" title="Quote">${iconSvg('pen')}<span></span></button>
+      <button class="note-action zap-action" data-action="zap" title="Zap ${state.zapDefaultSats} sats — hold or right-click for options">${iconSvg('zap')}<span>Zap</span></button>
       <button class="note-action${state.liked.has(event.id) ? ' liked' : ''}" data-action="like" title="Like">${iconSvg('heart')}<span>${reactionCountLabel(event.id)}</span></button>
       <button class="note-action" data-action="mute-thread" title="Mute thread">${iconSvg('volume-x')}<span></span></button>
     </div>
@@ -1593,6 +1656,7 @@ function renderNote(event, opts = {}) {
   el.querySelector('[data-action="reply"]').onclick = () => toggleReply(el, event);
   el.querySelector('[data-action="repost"]').onclick = () => doRepost(event);
   el.querySelector('[data-action="quote"]').onclick = () => quoteNote(event);
+  attachZapButton(el.querySelector('[data-action="zap"]'), event);
   el.querySelector('[data-action="like"]').onclick = (e) => doLike(event, e.currentTarget);
   el.querySelector('[data-action="mute-thread"]').onclick = () => muteThread(event);
 
@@ -1923,6 +1987,225 @@ function quoteNote(event) {
   composeText.dispatchEvent(new Event('input'));
   composeText.focus();
   composeText.setSelectionRange(0, 0);
+}
+
+// Bolt button: a short tap one-tap zaps the saved default; a deliberate
+// long-press (touch or mouse held) or right-click opens the custom modal.
+function attachZapButton(button, event) {
+  let timer = null;
+  let longFired = false;
+  const LONG_MS = 700;
+  const startHold = () => {
+    longFired = false;
+    timer = setTimeout(() => { longFired = true; timer = null; showZapModal(event); }, LONG_MS);
+  };
+  const cancelHold = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  button.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse' && e.button !== 0) return; startHold(); });
+  button.addEventListener('pointerup', cancelHold);
+  button.addEventListener('pointerleave', cancelHold);
+  button.addEventListener('pointercancel', cancelHold);
+  button.addEventListener('contextmenu', (e) => { e.preventDefault(); cancelHold(); longFired = true; showZapModal(event); });
+  button.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (longFired) { longFired = false; return; } // the hold already opened the modal
+    quickZap(event, button);
+  });
+}
+
+// Shared zap core used by both one-tap and the modal, so they validate and pay
+// identically. Resolves with Idenstr's pay result, or throws a readable error.
+async function zapNote({ event, amountSats, comment = '', zapAddress }) {
+  const lnurl = zapAddress || zapAddressForProfile(state.profiles.get(event.pubkey) ?? {});
+  if (!lnurl) throw new Error('recipient has no zap address in kind:0 metadata');
+  if (!Number.isFinite(amountSats) || amountSats < 1) throw new Error('amount must be at least 1 sat');
+  return api('/api/v1/idenstr/zaps/pay', {
+    method: 'POST',
+    body: {
+      pubkey: event.pubkey,
+      eventId: event.id,
+      amountSats,
+      comment,
+      lnurl,
+      relays: [...new Set([...(state.relays.write ?? []), ...(state.relays.read ?? [])])]
+    }
+  });
+}
+
+async function quickZap(event, button) {
+  if (button.dataset.zapping === '1') return;
+  const amountSats = Number(state.zapDefaultSats) || 100;
+  let zapAddress = zapAddressForProfile(state.profiles.get(event.pubkey) ?? {});
+  button.dataset.zapping = '1';
+  button.style.opacity = '0.5';
+  try {
+    if (!zapAddress) {
+      // Short taps should stay one-tap on mobile: refresh the recipient kind:0
+      // metadata in-place instead of opening the custom amount/comment modal.
+      queueProfileFetch(event.pubkey, { needZap: true, force: true });
+      toast('Checking profile for zap address…', 'info');
+      zapAddress = await waitForZapAddress(event.pubkey, 3500);
+    }
+    const result = await zapNote({ event, amountSats, zapAddress });
+    toast(`Zapped ${result.amountSats ?? amountSats} sats`, 'success');
+  } catch (err) {
+    toast(`Zap failed: ${err.message}`, 'error');
+  } finally {
+    button.dataset.zapping = '0';
+    button.style.opacity = '';
+  }
+}
+
+function waitForZapAddress(pubkey, timeoutMs = 3500) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const tick = () => {
+      const zapAddress = zapAddressForProfile(state.profiles.get(pubkey) ?? {});
+      if (zapAddress) return resolve(zapAddress);
+      if (Date.now() - started >= timeoutMs) return reject(new Error('recipient has no zap address in kind:0 yet; hold the bolt for custom zap details'));
+      setTimeout(tick, 150);
+    };
+    tick();
+  });
+}
+
+function showZapModal(event) {
+  const profile = state.profiles.get(event.pubkey) ?? {};
+  const name = profile.display_name || profile.displayName || profile.name || shortNpub(event.pubkey);
+  const zapAddress = zapAddressForProfile(profile);
+  if (!zapAddress) queueProfileFetch(event.pubkey, { needZap: true, force: true });
+  const mc = document.getElementById('modal-content');
+  mc.innerHTML = `
+    <h2>Zap ${esc(name)}</h2>
+    <p class="modal-help">Send a NIP-57 zap through Idenstr's connected NWC wallet. Feedstr never sees the wallet secret.</p>
+    <form id="zap-form" class="zap-form" data-zap-pubkey="${esc(event.pubkey)}" data-zap-event-id="${esc(event.id)}">
+      <label class="form-row">
+        <span>Amount</span>
+        <div class="zap-amounts" role="group" aria-label="Zap amount">
+          ${[...new Set([21, 100, 500, 1000, state.zapDefaultSats])].sort((a, b) => a - b).map((amount) => `<button type="button" class="zap-preset${amount === state.zapDefaultSats ? ' selected' : ''}" data-amount="${amount}">${amount}</button>`).join('')}
+        </div>
+        <input name="amount" inputmode="numeric" pattern="[0-9]*" value="${state.zapDefaultSats}" aria-label="Custom zap amount in sats" />
+      </label>
+      <label class="form-row">
+        <span>Comment</span>
+        <textarea name="comment" maxlength="500" placeholder="optional zap note"></textarea>
+      </label>
+      <div class="terminal-mini ${zapAddress ? '' : 'running'}" id="zap-status">${zapAddress ? `$ feedstr zap\nrecipient: ${esc(zapAddress)}\nready: choose amount and send` : '$ feedstr zap\nstatus: checking profile for zap address…'}</div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-zap-cancel>Cancel</button>
+        <button type="submit" class="btn btn-primary" ${zapAddress ? '' : 'disabled'}>${iconSvg('zap')} Send zap</button>
+      </div>
+    </form>
+  `;
+  modal.classList.add('open');
+  const form = mc.querySelector('#zap-form');
+  const amountInput = form.elements.amount;
+  for (const preset of mc.querySelectorAll('.zap-preset')) {
+    preset.addEventListener('click', () => {
+      mc.querySelectorAll('.zap-preset').forEach(btn => btn.classList.remove('selected'));
+      preset.classList.add('selected');
+      amountInput.value = preset.dataset.amount;
+    });
+  }
+  amountInput.addEventListener('input', () => mc.querySelectorAll('.zap-preset').forEach(btn => btn.classList.toggle('selected', btn.dataset.amount === amountInput.value.trim())));
+  mc.querySelector('[data-zap-cancel]')?.addEventListener('click', closeModal);
+  form.addEventListener('submit', async (submitEvent) => {
+    submitEvent.preventDefault();
+    await sendZap(event, form, zapAddress);
+  });
+}
+
+const ZAP_ADDRESS_FIELD_NAMES = [
+  'lud16', 'lud06',
+  'lightning_address', 'lightningAddress', 'lightning', 'lightningAddressUrl',
+  'lnurl', 'lnurlp', 'lnurlPay', 'lnurlpay', 'lnurl_pay',
+  'zap', 'zapAddress', 'zap_address'
+];
+const ZAP_ADDRESS_FIELD_RE = /^(lud16|lud06|lightning[_-]?address|lightning|lnurlp?|lnurl[_-]?pay|zap[_-]?address|zap)$/i;
+
+function zapAddressForProfile(profile = {}) {
+  for (const field of ZAP_ADDRESS_FIELD_NAMES) {
+    const address = normalizeZapAddress(profile?.[field]);
+    if (address) return address;
+  }
+  return findNestedZapAddress(profile);
+}
+
+function findNestedZapAddress(value, depth = 0) {
+  if (!value || depth > 2 || typeof value !== 'object') return '';
+  for (const [key, child] of Object.entries(value)) {
+    if (!ZAP_ADDRESS_FIELD_RE.test(key)) continue;
+    const direct = normalizeZapAddress(child);
+    if (direct) return direct;
+    const nested = findNestedZapAddress(child, depth + 1);
+    if (nested) return nested;
+  }
+  return '';
+}
+
+function normalizeZapAddress(value) {
+  if (typeof value !== 'string') return '';
+  let raw = value.trim();
+  if (!raw) return '';
+  raw = raw.replace(/^lightning:/i, '').trim();
+  if (/^lnurl[0-9a-z]+$/i.test(raw)) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return raw;
+  return '';
+}
+
+function updateOpenZapModal(pubkey) {
+  const form = document.getElementById('zap-form');
+  if (!form || form.dataset.zapPubkey !== pubkey) return;
+  const zapAddress = zapAddressForProfile(state.profiles.get(pubkey) ?? {});
+  const status = document.getElementById('zap-status');
+  const submit = form.querySelector('button[type="submit"]');
+  if (!status || !submit) return;
+  if (zapAddress) {
+    status.className = 'terminal-mini';
+    status.textContent = `$ feedstr zap\nrecipient: ${zapAddress}\nready: choose amount and send`;
+    submit.disabled = false;
+  } else {
+    status.className = 'terminal-mini warn';
+    status.textContent = '$ feedstr zap\nrecipient profile loaded, but no zap address was found in known kind:0 fields.';
+  }
+}
+
+async function sendZap(event, form, zapAddress) {
+  const submit = form.querySelector('button[type="submit"]');
+  const cancel = form.querySelector('[data-zap-cancel]');
+  const status = form.querySelector('#zap-status');
+  const resolvedZapAddress = zapAddress || zapAddressForProfile(state.profiles.get(event.pubkey) ?? {});
+  const amountSats = Number(form.elements.amount.value);
+  if (!Number.isFinite(amountSats) || amountSats < 1) {
+    status.className = 'terminal-mini error';
+    status.textContent = '$ feedstr zap\nerror: enter an amount of at least 1 sat';
+    return;
+  }
+  if (!resolvedZapAddress) {
+    status.className = 'terminal-mini warn';
+    status.textContent = '$ feedstr zap\nerror: still waiting for a zap address from the recipient profile';
+    queueProfileFetch(event.pubkey, { needZap: true, force: true });
+    return;
+  }
+  submit.disabled = true;
+  status.className = 'terminal-mini';
+  status.textContent = `$ feedstr zap\namount: ${amountSats} sats\nstatus: requesting invoice + paying via Idenstr...`;
+  try {
+    const result = await zapNote({ event, amountSats, comment: form.elements.comment.value.trim(), zapAddress: resolvedZapAddress });
+    status.className = 'terminal-mini ok';
+    status.textContent = `$ feedstr zap\nok: paid ${result.amountSats ?? amountSats} sats${result.feesPaid != null ? `\nfee: ${result.feesPaid} msat` : ''}${result.preimage ? `\npreimage: ${result.preimage.slice(0, 16)}…` : ''}`;
+    toast(`Zapped ${amountSats} sats`, 'success');
+    // The zap is done — drop the dead "Send zap" button and turn the only
+    // remaining action into a clear Close.
+    submit.remove();
+    if (cancel) cancel.textContent = 'Close';
+  } catch (err) {
+    status.className = 'terminal-mini error';
+    status.textContent = `$ feedstr zap\nerror: ${err.message}`;
+    toast('Zap failed', 'error');
+    submit.disabled = false;
+  }
 }
 
 async function doLike(event, btn) {
@@ -2422,7 +2705,6 @@ const modal = document.getElementById('add-column-modal');
 const idenstrSettingsBtn = document.getElementById('idenstr-settings-btn');
 const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
 const mobileMenuBackdrop = document.getElementById('mobile-menu-backdrop');
-const mobileStackBtn = document.getElementById('mobile-stack-btn');
 
 addColumnBtn.onclick = () => { closeMobileMenu(); showAddColumnModal(); };
 
@@ -2443,7 +2725,6 @@ document.getElementById('columns').addEventListener('click', (e) => {
 idenstrSettingsBtn.onclick = () => { closeMobileMenu(); showIdenstrSettings(); };
 mobileMenuToggle.onclick = () => toggleMobileMenu();
 mobileMenuBackdrop.onclick = () => closeMobileMenu();
-mobileStackBtn.onclick = () => showIdenstrSettings();
 modal.onclick = (e) => { if (e.target === modal) closeModal(); };
 
 // Basic focus trap: keep Tab cycling inside the add-column / settings modal.
@@ -2837,6 +3118,22 @@ async function loadLiked() {
 function persistLiked() {
   api('/api/v1/state/liked', { method: 'PUT', body: { value: [...state.liked] } })
     .catch(err => console.warn('Failed to save liked notes', err.message));
+}
+
+// One-tap zap amount. A Feedstr UX preference (not a wallet credential), so it
+// lives in Feedstr's own state store, server-side, and syncs across devices.
+async function loadZapDefault() {
+  try {
+    const { value } = await api('/api/v1/state/zap-default');
+    const n = Math.round(Number(value));
+    if (Number.isFinite(n) && n >= 1) return n;
+  } catch {}
+  return 100;
+}
+
+function persistZapDefault() {
+  api('/api/v1/state/zap-default', { method: 'PUT', body: { value: state.zapDefaultSats } })
+    .catch(err => console.warn('Failed to save default zap amount', err.message));
 }
 
 // Mutes come from Idenstr's kind:10000 identity policy when available. The
