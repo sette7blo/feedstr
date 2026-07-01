@@ -11,6 +11,24 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Simplified Feedstr settings access: removed the awkward top-right mobile `Idenstr` button and made the bottom-left sidebar chip the single Settings entry with a gear icon plus Idenstr connection status as secondary text.
+
+- Improved zap address discovery: Feedstr now keeps the full Idenstr directory profile payload when seeding its cache, checks additional common/non-standard kind:0 zap fields (`lightning`, `lnurl`, `lnurlp`, `zapAddress`, nested zap objects), strips `lightning:` URI prefixes, and updates status copy from the overly narrow `lud16/lud06` wording to `zap address`.
+
+- Fixed quick zaps on mobile/iOS so a short tap on the lightning bolt stays in the one-tap default-sats flow instead of opening the custom amount/comment modal. If the recipient zap address is missing, Feedstr now refreshes their kind:0 metadata in-place and only uses the modal for deliberate long-press/right-click custom zaps.
+
+- Narrowed the iOS/mobile left drawer further to an almost-half-screen 56vw/228px layout (58vw/220px on very small screens), while preserving 44px column-close tap targets and cache-busting the stylesheet for homescreen/PWA installs.
+
+- Added a configurable default zap amount (Settings → Zaps): tapping a note's lightning bolt now instantly zaps that amount, while holding the bolt (or right-clicking) still opens the amount/comment modal. The default is stored in Feedstr's own state store and syncs across devices. After a zap completes, the modal's only button reads Close.
+
+- Fixed Zap profile lookup getting stuck on `checking profile for lud16/lud06…` by carrying forced zap refresh requests through the profile-fetch scheduler even when the author already has cached display metadata.
+
+- Fixed outgoing zap discovery so opening Zap on a note force-refreshes the author's newest kind:0 profile for `lud16`/`lud06` instead of treating seeded directory profiles as complete.
+
+- Added outgoing NIP-57 zap UI: each note has a Zap action with mobile-safe amount/comment controls, and Feedstr delegates payment to Idenstr's narrow zap endpoint so the NWC wallet secret stays in Idenstr.
+
+- Added a close button to each sidebar column entry, with a larger always-visible touch target on mobile/iOS, so columns can be closed directly from the left pane without first switching to that column.
+
 ## [v0.1.2] — 2026-06-25
 
 - Fixed a latent bug in the prepared-statement cache: it now re-resolves the database on every call, so a cached statement can never outlive its database handle if the data path changes at runtime. No effect on a normal single-path deployment.

@@ -13,7 +13,7 @@ const envFile = process.env.FEEDSTR_ENV_FILE ?? join(root, '.env');
 const port = Number(process.env.FEEDSTR_BIND_PORT ?? process.env.PORT ?? 3002);
 const host = process.env.FEEDSTR_BIND_HOST ?? '0.0.0.0';
 const nostrBuildUploadUrl = 'https://nostr.build/api/v2/nip96/upload';
-const requiredIdenstrScopes = ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:5', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235'];
+const requiredIdenstrScopes = ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:5', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235', 'zaps:write'];
 
 let runtimeConfig = readRuntimeConfig();
 

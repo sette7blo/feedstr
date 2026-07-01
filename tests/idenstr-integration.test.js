@@ -10,9 +10,46 @@ test('mobile form controls stay at the iOS no-zoom font size', async () => {
   const source = await readFile(html, 'utf8');
   const css = await readFile(styles, 'utf8');
   assert.match(source, /maximum-scale=1/);
-  assert.match(source, /styles\.css\?v=mobile-input-zoom-fix-2/);
+  assert.match(source, /styles\.css\?v=mobile-drawer-half-1/);
   assert.match(css, /iOS Safari auto-zooms focused form controls below 16px/);
   assert.match(css, /@media \(hover: none\), \(pointer: coarse\), \(max-width: 900px\) \{[\s\S]*input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="file"\]\),[\s\S]*textarea,[\s\S]*select[\s\S]*font-size: 16px !important;/);
+});
+
+test('sidebar column list can close columns directly on mobile', async () => {
+  const source = await readFile(html, 'utf8');
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /className = 'sidebar-column-item'/);
+  assert.match(source, /className = 'sidebar-item sidebar-column-jump'/);
+  assert.match(source, /className = 'sidebar-column-close'/);
+  assert.match(source, /aria-label', `Close \$\{col\.name\} column`/);
+  assert.match(source, /event\.stopPropagation\(\);\s*removeColumn\(col\.id\);/);
+  assert.match(source, /#column-list \[data-side-col="\$\{id\}"\]\`\)\?\.remove\(\)/);
+  assert.match(css, /\.sidebar-column-close \{[\s\S]*width: 34px;[\s\S]*height: 34px;/);
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.sidebar-column-close \{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*opacity: 1;/);
+});
+
+test('mobile drawer stays compact on iOS while preserving close tap targets', async () => {
+  const css = await readFile(styles, 'utf8');
+  assert.match(css, /\.sidebar \{[\s\S]*width: min\(56vw, 228px\);/);
+  assert.match(css, /@media \(max-width: 380px\) \{\s*\.sidebar \{ width: min\(58vw, 220px\); \}/);
+  assert.match(css, /\.sidebar-item \{[\s\S]*min-height: 44px;[\s\S]*font-size: 14px;/);
+  assert.match(css, /\.sidebar-column-close \{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*margin-right: 6px;/);
+});
+
+test('settings entry is a single bottom-left gear chip, not a top-right Idenstr button', async () => {
+  const source = await readFile(html, 'utf8');
+  const css = await readFile(styles, 'utf8');
+  assert.doesNotMatch(source, /mobile-stack-btn|mobile-stack-button/);
+  assert.doesNotMatch(css, /mobile-stack-button/);
+  assert.match(source, /class="mobile-topbar-spacer"/);
+  assert.match(source, /id="idenstr-settings-btn"[^>]*aria-label="Open Feedstr settings"/);
+  assert.match(source, /class="connection-chip-icon"/);
+  assert.match(source, /class="connection-chip-label">Settings</);
+  assert.match(source, /class="connection-chip-status" id="idenstr-summary"/);
+  assert.match(source, /Idenstr connected/);
+  assert.match(css, /\.connection-chip-main \{[^}]*flex-direction: column/);
+  assert.match(css, /\.connection-chip-icon \{/);
+  assert.match(css, /grid-template-columns: 44px minmax\(0, 1fr\) 44px/);
 });
 
 test('Feedstr signs through Idenstr instead of holding keys or calling admin publish endpoints', async () => {
@@ -26,7 +63,7 @@ test('Feedstr exposes Idenstr connection guidance and required scoped token perm
   const source = await readFile(html, 'utf8');
   const serverSource = await readFile(server, 'utf8');
   // The server is the single source of truth for the required scope list.
-  for (const scope of ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235']) {
+  for (const scope of ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235', 'zaps:write']) {
     assert.match(serverSource, new RegExp(scope.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   // The frontend pulls the list from /api/v1/config rather than hardcoding it.
@@ -41,6 +78,61 @@ test('Feedstr exposes Idenstr connection guidance and required scoped token perm
   assert.match(source, /id="relay-test-btn"/);
   assert.match(source, /function testRelayConnection/);
   assert.doesNotMatch(source, /feedstrHostBind|Feedstr bind IP|bind IP changes/);
+});
+
+test('Feedstr exposes a zap action that delegates NIP-57 payment to Idenstr', async () => {
+  const source = await readFile(html, 'utf8');
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /data-action="zap"/);
+  assert.match(source, /function showZapModal/);
+  assert.match(source, /function sendZap/);
+  assert.match(source, /api\('\/api\/v1\/idenstr\/zaps\/pay'/);
+  assert.match(source, /Feedstr never sees the wallet secret/);
+  assert.match(source, /zapAddressForProfile/);
+  assert.match(source, /for \(const field of ZAP_ADDRESS_FIELD_NAMES\)/);
+  assert.match(source, /queueProfileFetch\(event\.pubkey, \{ needZap: true, force: true \}\)/);
+  assert.match(source, /state\._profileForceQueue/);
+  assert.match(source, /forceQueue\.has\(pubkey\) \|\| profileNeedsRefresh\(pubkey\)/);
+  assert.match(source, /function updateOpenZapModal/);
+  assert.match(source, /checking profile for zap address/);
+  assert.match(source, /resolvedZapAddress = zapAddress \|\| zapAddressForProfile/);
+  // Both one-tap and the modal pay through the one shared core.
+  assert.match(source, /async function zapNote\(/);
+  assert.match(source, /zapNote\(\{ event, amountSats, comment: form\.elements\.comment\.value\.trim\(\), zapAddress: resolvedZapAddress \}\)/);
+  assert.match(source, /ZAP_ADDRESS_FIELD_NAMES/);
+  assert.match(source, /'lud16', 'lud06'/);
+  assert.match(source, /'lightning_address', 'lightningAddress', 'lightning'/);
+  assert.match(source, /'lnurl', 'lnurlp', 'lnurlPay'/);
+  assert.match(source, /function normalizeZapAddress/);
+  assert.match(source, /function findNestedZapAddress/);
+  assert.match(source, /zapAddressForProfile\(existing\) !== zapAddressForProfile\(next\)/);
+  assert.match(source, /\.\.\.profile,\s*name: profile\.name/s);
+  assert.match(css, /\.note-action\.zap-action/);
+  assert.match(css, /\.zap-preset\.selected/);
+});
+
+test('Feedstr one-tap zaps a configurable default amount and keeps the modal on long-press', async () => {
+  const source = await readFile(html, 'utf8');
+  // Bolt button: short tap -> quickZap, hold/right-click -> modal.
+  assert.match(source, /function attachZapButton/);
+  assert.match(source, /async function quickZap/);
+  assert.match(source, /if \(longFired\) \{ longFired = false; return; \}/);
+  assert.match(source, /contextmenu', \(e\) => \{ e\.preventDefault\(\); cancelHold\(\); longFired = true; showZapModal\(event\); \}/);
+  assert.match(source, /attachZapButton\(el\.querySelector\('\[data-action="zap"\]'\), event\)/);
+  // No address yet -> stay in one-tap flow: refresh metadata and toast instead of opening the custom modal.
+  assert.match(source, /toast\('Checking profile for zap address…', 'info'\)/);
+  assert.match(source, /zapAddress = await waitForZapAddress\(event\.pubkey, 3500\)/);
+  assert.match(source, /function waitForZapAddress/);
+  assert.doesNotMatch(source, /if \(!zapAddress\) \{ showZapModal\(event\); return; \}/);
+  // Default amount persists server-side in Feedstr's own state store.
+  assert.match(source, /async function loadZapDefault/);
+  assert.match(source, /function persistZapDefault/);
+  assert.match(source, /api\('\/api\/v1\/state\/zap-default'/);
+  assert.match(source, /zapDefaultSats: 100/);
+  // Settings panel exposes the default-amount control.
+  assert.match(source, /id="zap-default-form"/);
+  assert.match(source, /id="zap-default-input"/);
+  assert.match(source, /state\.zapDefaultSats = amount/);
 });
 
 test('composer can upload a device image through nostr.build and insert the returned URL', async () => {
