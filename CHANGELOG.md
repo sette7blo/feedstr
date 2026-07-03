@@ -11,6 +11,9 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Moved the relay/follow count under the Zap wallet chip in the left pane, and turned the wallet summary into a Settings-style chip that opens dedicated zap settings for the default one-tap amount and wallet refresh.
+- Restyled the note zap action to match the other actions: dim gray with the standard hover color instead of always-gold, and dropped the redundant `Zap` text label.
+
 ## [v0.2.0] — 2026-07-01
 
 - Simplified Feedstr settings access: removed the awkward top-right mobile `Idenstr` button and made the bottom-left sidebar chip the single Settings entry with a gear icon plus Idenstr connection status as secondary text.
