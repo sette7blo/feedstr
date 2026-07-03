@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico?v=feedstr-fd-logo" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png?v=feedstr-fd-logo" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=feedstr-fd-logo" />
-  <link rel="stylesheet" href="./styles.css?v=mobile-drawer-half-1" />
+  <link rel="stylesheet" href="./styles.css?v=zap-settings-chip-1" />
 </head>
 <body>
 
@@ -62,6 +62,17 @@
           <span class="connection-chip-status" id="idenstr-summary">
             <span class="connection-dot"></span>
             <span class="connection-chip-text">Checking Idenstr&hellip;</span>
+          </span>
+        </span>
+        <svg class="connection-chip-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <button class="connection-chip zap-settings-chip" id="zap-settings-btn" type="button" title="Open zap settings" aria-label="Open zap settings">
+        <span class="connection-chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+        <span class="connection-chip-main">
+          <span class="connection-chip-label">Zap wallet</span>
+          <span class="connection-chip-status" id="zap-wallet-chip" aria-live="polite">
+            <span class="connection-dot"></span>
+            <span class="connection-chip-text">checking balance…</span>
           </span>
         </span>
         <svg class="connection-chip-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
@@ -142,7 +153,8 @@ const state = {
   idenstrStatus: null,
   composeMentionIndex: [],
   composeMentions: [],
-  zapDefaultSats: 100 // one-tap zap amount; overridden from the state store at boot
+  zapDefaultSats: 100, // one-tap zap amount; overridden from the state store at boot
+  zapWallet: { loading: true, configured: false, balanceMsat: null, balanceAt: null, error: '' }
 };
 
 // Populated from /api/v1/config at boot — Feedstr's server is the single source
@@ -157,6 +169,7 @@ async function boot() {
     requiredIdenstrScopes = state.config.requiredIdenstrScopes ?? requiredIdenstrScopes;
     state.idenstrStatus = await api('/api/v1/idenstr/status');
     renderIdenstrSummary();
+    renderZapWalletSummary();
 
     if (!state.config.idenstrTokenConfigured) {
       setStatus(false, 'Idenstr token missing');
@@ -217,12 +230,15 @@ async function boot() {
     state.zapDefaultSats = await loadZapDefault();
     state.mutes = normalizeMutes(mutesResponse || await loadMutes());
     refreshMuteSets();
+    refreshZapWalletBalance();
     renderColumns();
     for (const col of state.columns) hydrateColumnCache(col);
     connectRelays();
   } catch (err) {
     setStatus(false, 'Failed to connect to Idenstr');
     renderIdenstrSummary(err);
+    state.zapWallet = { loading: false, configured: false, balanceMsat: null, balanceAt: null, error: err.message };
+    renderZapWalletSummary();
     showIdenstrSettings(err.message);
     console.error('Boot failed:', err);
   }
@@ -270,6 +286,139 @@ function renderIdenstrSummary(error = null) {
   }
   if (chip) chip.className = `connection-chip ${stateClass}`;
   el.innerHTML = `<span class="connection-dot"></span><span class="connection-chip-text">${esc(text)}</span>`;
+}
+
+function renderZapWalletSummary() {
+  const statusEl = document.getElementById('zap-wallet-chip');
+  const chip = document.getElementById('zap-settings-btn');
+  if (!statusEl || !chip) return;
+  const wallet = state.zapWallet || {};
+  let stateClass = 'warn';
+  let value = 'checking balance…';
+  if (wallet.loading) {
+    stateClass = 'running';
+  } else if (wallet.error) {
+    stateClass = 'error';
+    value = 'wallet unavailable';
+  } else if (!wallet.configured) {
+    stateClass = 'warn';
+    value = 'connect NWC in Idenstr';
+  } else if (Number.isFinite(wallet.balanceMsat)) {
+    stateClass = wallet.balanceMsat > 0 ? 'ok' : 'warn';
+    value = `${formatWalletSats(wallet.balanceMsat)}${wallet.balanceAt ? ` · ${walletRelativeTime(wallet.balanceAt)}` : ''}`;
+  } else {
+    stateClass = 'warn';
+    value = 'balance unknown';
+  }
+  chip.className = `connection-chip zap-settings-chip ${stateClass}`;
+  statusEl.querySelector('.connection-chip-text').textContent = value;
+}
+
+async function refreshZapWalletBalance() {
+  state.zapWallet = { ...(state.zapWallet || {}), loading: true, error: '' };
+  renderZapWalletSummary();
+  try {
+    state.zapWallet = await api('/api/v1/idenstr/zaps/wallet/balance', { method: 'POST' });
+  } catch (err) {
+    try {
+      state.zapWallet = await api('/api/v1/idenstr/zaps/wallet');
+    } catch {}
+    state.zapWallet = { ...(state.zapWallet || {}), loading: false, error: err.message };
+  } finally {
+    state.zapWallet.loading = false;
+    renderZapWalletSummary();
+  }
+}
+
+function formatWalletSats(msat) {
+  const sats = Math.floor(Number(msat) / 1000);
+  if (!Number.isFinite(sats)) return 'balance unknown';
+  if (sats >= 1000000) return `${(sats / 1000000).toFixed(2).replace(/\.00$/, '')}M sats`;
+  if (sats >= 1000) return `${(sats / 1000).toFixed(sats >= 10000 ? 0 : 1).replace(/\.0$/, '')}k sats`;
+  return `${sats} sats`;
+}
+
+function walletRelativeTime(value) {
+  const at = Date.parse(value);
+  if (!Number.isFinite(at)) return 'cached';
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (seconds < 60) return 'now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+function zapWalletSummaryText() {
+  const wallet = state.zapWallet || {};
+  if (wallet.loading) return 'checking balance…';
+  if (wallet.error) return `wallet unavailable: ${wallet.error}`;
+  if (!wallet.configured) return 'NWC is not connected in Idenstr yet.';
+  if (Number.isFinite(wallet.balanceMsat)) return `${formatWalletSats(wallet.balanceMsat)}${wallet.balanceAt ? ` · ${walletRelativeTime(wallet.balanceAt)}` : ''}`;
+  return 'balance unknown';
+}
+
+function handleZapDefaultSubmit(e) {
+  e.preventDefault();
+  const input = document.getElementById('zap-default-input');
+  const status = document.getElementById('zap-default-status');
+  const amount = Math.round(Number(input.value.trim()));
+  status.classList.remove('hidden');
+  if (!Number.isFinite(amount) || amount < 1 || amount > 100000) {
+    status.className = 'terminal-mini error';
+    status.textContent = '$ feedstr zap\nerror: enter a whole number of sats between 1 and 100000';
+    return;
+  }
+  state.zapDefaultSats = amount;
+  input.value = String(amount);
+  persistZapDefault();
+  status.className = 'terminal-mini ok';
+  status.textContent = `$ feedstr zap\nsaved: one tap now sends ${amount} sats`;
+}
+
+function showZapSettings() {
+  const mc = document.getElementById('modal-content');
+  mc.innerHTML = `
+    <div class="connection-head">
+      <div>
+        <div class="section-label">Zap settings</div>
+        <h2>Zap wallet</h2>
+        <p class="settings-copy">Set the default one-tap zap amount. Hold a note's lightning bolt, or right-click it, when you want a custom amount and comment.</p>
+      </div>
+      <span class="status-orb ${state.zapWallet?.configured ? 'ok' : 'warn'}">${state.zapWallet?.configured ? 'ready' : 'setup'}</span>
+    </div>
+
+    <div class="connection-section">
+      <div class="subsection-head">
+        <span>Wallet</span>
+        <button class="btn btn-ghost btn-mini" type="button" id="zap-wallet-refresh">Refresh</button>
+      </div>
+      <div class="terminal-mini ${state.zapWallet?.error ? 'bad' : (state.zapWallet?.configured ? 'ok' : 'warn')}">$ feedstr zap-wallet\n${esc(zapWalletSummaryText())}</div>
+    </div>
+
+    <div class="connection-section">
+      <div class="subsection-head"><span>Default zap</span><small>one-tap amount</small></div>
+      <form id="zap-default-form" class="relay-input-row">
+        <input id="zap-default-input" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${esc(String(state.zapDefaultSats ?? 100))}" aria-label="Default zap amount in sats" />
+        <button class="btn btn-ghost" type="submit">Save</button>
+      </form>
+      <p class="settings-copy">Short tap sends this many sats immediately through Idenstr's wallet.</p>
+      <div id="zap-default-status" class="terminal-mini hidden"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" type="button" id="zap-settings-close">Close</button>
+    </div>
+  `;
+  document.getElementById('zap-settings-close').onclick = closeModal;
+  document.getElementById('zap-default-form')?.addEventListener('submit', handleZapDefaultSubmit);
+  document.getElementById('zap-wallet-refresh')?.addEventListener('click', async (e) => {
+    setButtonState(e.currentTarget, 'busy', 'Refreshing...');
+    await refreshZapWalletBalance();
+    showZapSettings();
+  });
+  modal.classList.add('open');
 }
 
 function showIdenstrSettings(reason = '') {
@@ -374,16 +523,6 @@ function showIdenstrSettings(reason = '') {
     </div>
 
     <div class="connection-section">
-      <div class="subsection-head"><span>Zaps</span><small>one-tap default</small></div>
-      <p class="settings-copy">Tapping the lightning bolt on a note instantly zaps this amount through Idenstr's wallet. Hold the bolt (or right-click) to choose a custom amount and add a comment.</p>
-      <form id="zap-default-form" class="relay-input-row">
-        <input id="zap-default-input" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${esc(String(state.zapDefaultSats ?? 100))}" aria-label="Default zap amount in sats" />
-        <button class="btn btn-ghost" type="submit">Save</button>
-      </form>
-      <div id="zap-default-status" class="terminal-mini hidden"></div>
-    </div>
-
-    <div class="connection-section">
       <div class="subsection-head"><span>Muted keywords</span><small>${muteEntriesByType('keyword').length} active</small></div>
       <p class="settings-copy">Notes containing any of these words are hidden from every feed.</p>
       <form id="mute-add-form" class="relay-input-row">
@@ -401,24 +540,6 @@ function showIdenstrSettings(reason = '') {
   document.getElementById('settings-recheck').onclick = recheckIdenstrSettings;
   document.getElementById('relay-test-btn').onclick = testRelayConnection;
   document.getElementById('idenstr-config-form').addEventListener('submit', saveIdenstrSettings);
-
-  document.getElementById('zap-default-form')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const input = document.getElementById('zap-default-input');
-    const status = document.getElementById('zap-default-status');
-    const amount = Math.round(Number(input.value.trim()));
-    status.classList.remove('hidden');
-    if (!Number.isFinite(amount) || amount < 1 || amount > 100000) {
-      status.className = 'terminal-mini error';
-      status.textContent = '$ feedstr zap\nerror: enter a whole number of sats between 1 and 100000';
-      return;
-    }
-    state.zapDefaultSats = amount;
-    input.value = String(amount);
-    persistZapDefault();
-    status.className = 'terminal-mini ok';
-    status.textContent = `$ feedstr zap\nsaved: one tap now sends ${amount} sats`;
-  });
 
   renderMuteList();
   document.getElementById('mute-add-form').addEventListener('submit', (e) => {
@@ -1647,7 +1768,7 @@ function renderNote(event, opts = {}) {
       <button class="note-action" data-action="reply" title="Reply">${iconSvg('reply')}<span>${replyCountLabel(event.id)}</span></button>
       <button class="note-action" data-action="repost" title="Repost">${iconSvg('repost')}<span>${repostCountLabel(event.id)}</span></button>
       <button class="note-action" data-action="quote" title="Quote">${iconSvg('pen')}<span></span></button>
-      <button class="note-action zap-action" data-action="zap" title="Zap ${state.zapDefaultSats} sats — hold or right-click for options">${iconSvg('zap')}<span>Zap</span></button>
+      <button class="note-action" data-action="zap" title="Zap ${state.zapDefaultSats} sats — hold or right-click for options">${iconSvg('zap')}<span></span></button>
       <button class="note-action${state.liked.has(event.id) ? ' liked' : ''}" data-action="like" title="Like">${iconSvg('heart')}<span>${reactionCountLabel(event.id)}</span></button>
       <button class="note-action" data-action="mute-thread" title="Mute thread">${iconSvg('volume-x')}<span></span></button>
     </div>
@@ -2048,6 +2169,7 @@ async function quickZap(event, button) {
     }
     const result = await zapNote({ event, amountSats, zapAddress });
     toast(`Zapped ${result.amountSats ?? amountSats} sats`, 'success');
+    refreshZapWalletBalance();
   } catch (err) {
     toast(`Zap failed: ${err.message}`, 'error');
   } finally {
@@ -2196,6 +2318,7 @@ async function sendZap(event, form, zapAddress) {
     status.className = 'terminal-mini ok';
     status.textContent = `$ feedstr zap\nok: paid ${result.amountSats ?? amountSats} sats${result.feesPaid != null ? `\nfee: ${result.feesPaid} msat` : ''}${result.preimage ? `\npreimage: ${result.preimage.slice(0, 16)}…` : ''}`;
     toast(`Zapped ${amountSats} sats`, 'success');
+    refreshZapWalletBalance();
     // The zap is done — drop the dead "Send zap" button and turn the only
     // remaining action into a clear Close.
     submit.remove();
@@ -2703,6 +2826,7 @@ function resolveComposeMentions(text) {
 const addColumnBtn = document.getElementById('add-column-btn');
 const modal = document.getElementById('add-column-modal');
 const idenstrSettingsBtn = document.getElementById('idenstr-settings-btn');
+const zapSettingsBtn = document.getElementById('zap-settings-btn');
 const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
 const mobileMenuBackdrop = document.getElementById('mobile-menu-backdrop');
 
@@ -2723,6 +2847,7 @@ document.getElementById('columns').addEventListener('click', (e) => {
   }
 });
 idenstrSettingsBtn.onclick = () => { closeMobileMenu(); showIdenstrSettings(); };
+zapSettingsBtn.onclick = () => { closeMobileMenu(); showZapSettings(); };
 mobileMenuToggle.onclick = () => toggleMobileMenu();
 mobileMenuBackdrop.onclick = () => closeMobileMenu();
 modal.onclick = (e) => { if (e.target === modal) closeModal(); };

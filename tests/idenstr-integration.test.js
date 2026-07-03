@@ -10,7 +10,7 @@ test('mobile form controls stay at the iOS no-zoom font size', async () => {
   const source = await readFile(html, 'utf8');
   const css = await readFile(styles, 'utf8');
   assert.match(source, /maximum-scale=1/);
-  assert.match(source, /styles\.css\?v=mobile-drawer-half-1/);
+  assert.match(source, /styles\.css\?v=zap-settings-chip-1/);
   assert.match(css, /iOS Safari auto-zooms focused form controls below 16px/);
   assert.match(css, /@media \(hover: none\), \(pointer: coarse\), \(max-width: 900px\) \{[\s\S]*input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="file"\]\),[\s\S]*textarea,[\s\S]*select[\s\S]*font-size: 16px !important;/);
 });
@@ -107,12 +107,14 @@ test('Feedstr exposes a zap action that delegates NIP-57 payment to Idenstr', as
   assert.match(source, /function findNestedZapAddress/);
   assert.match(source, /zapAddressForProfile\(existing\) !== zapAddressForProfile\(next\)/);
   assert.match(source, /\.\.\.profile,\s*name: profile\.name/s);
-  assert.match(css, /\.note-action\.zap-action/);
+  assert.doesNotMatch(source, /class="note-action zap-action"/);
+  assert.doesNotMatch(source, /<span>Zap<\/span>/);
   assert.match(css, /\.zap-preset\.selected/);
 });
 
 test('Feedstr one-tap zaps a configurable default amount and keeps the modal on long-press', async () => {
   const source = await readFile(html, 'utf8');
+  const css = await readFile(styles, 'utf8');
   // Bolt button: short tap -> quickZap, hold/right-click -> modal.
   assert.match(source, /function attachZapButton/);
   assert.match(source, /async function quickZap/);
@@ -129,7 +131,16 @@ test('Feedstr one-tap zaps a configurable default amount and keeps the modal on 
   assert.match(source, /function persistZapDefault/);
   assert.match(source, /api\('\/api\/v1\/state\/zap-default'/);
   assert.match(source, /zapDefaultSats: 100/);
-  // Settings panel exposes the default-amount control.
+  assert.match(source, /id="zap-settings-btn"/);
+  assert.match(source, /id="zap-wallet-chip"/);
+  assert.match(source, /function showZapSettings/);
+  assert.match(source, /zapSettingsBtn.onclick = \(\) => \{ closeMobileMenu\(\); showZapSettings\(\); \}/);
+  assert.match(source, /function refreshZapWalletBalance/);
+  assert.match(source, /api\('\/api\/v1\/idenstr\/zaps\/wallet\/balance', \{ method: 'POST' \}/);
+  assert.match(source, /formatWalletSats/);
+  assert.match(source, /walletRelativeTime/);
+  assert.match(css, /\.zap-settings-chip/);
+  // The separate zap settings chip exposes the default-amount control.
   assert.match(source, /id="zap-default-form"/);
   assert.match(source, /id="zap-default-input"/);
   assert.match(source, /state\.zapDefaultSats = amount/);

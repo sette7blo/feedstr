@@ -116,7 +116,7 @@ body {
   padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
 }
 .connection-chip {
   display: flex;
@@ -176,6 +176,13 @@ body {
 .connection-chip.error .connection-dot { background: var(--danger-red); box-shadow: 0 0 0 3px rgba(255, 56, 100, 0.16); }
 .connection-chip.ok { border-color: rgba(0, 208, 132, 0.32); }
 .connection-chip.error { border-color: rgba(255, 56, 100, 0.32); }
+.connection-chip.running .connection-dot { background: var(--dim); }
+.zap-settings-chip .connection-chip-icon { color: var(--bitcoin-gold); background: rgba(247, 147, 26, 0.12); }
+.zap-settings-chip.ok { border-color: rgba(247, 147, 26, 0.32); }
+.zap-settings-chip.warn .connection-dot { background: var(--bitcoin-gold); box-shadow: 0 0 0 3px rgba(247, 147, 26, 0.16); }
+.zap-settings-chip.error .connection-dot { background: var(--danger-red); box-shadow: 0 0 0 3px rgba(255, 56, 100, 0.16); }
+.zap-settings-chip:hover .connection-chip-chevron { color: var(--bitcoin-gold); }
+
 .sidebar-item {
   display: flex;
   align-items: center;
@@ -931,8 +938,6 @@ body {
 .note-action:hover { color: var(--purple-2); }
 .note-action.liked { color: var(--danger-red); }
 .note-action.reposted { color: var(--success-green); }
-.note-action.zap-action { color: var(--bitcoin-gold); }
-.note-action.zap-action:hover { color: #ffbd59; }
 .note-action svg { width: 15px; height: 15px; }
 
 .zap-form { display: flex; flex-direction: column; gap: 14px; }
