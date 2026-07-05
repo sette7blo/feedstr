@@ -10,7 +10,7 @@ test('mobile form controls stay at the iOS no-zoom font size', async () => {
   const source = await readFile(html, 'utf8');
   const css = await readFile(styles, 'utf8');
   assert.match(source, /maximum-scale=1/);
-  assert.match(source, /styles\.css\?v=zap-settings-chip-1/);
+  assert.match(source, /styles\.css\?v=zap-flash-1/);
   assert.match(css, /iOS Safari auto-zooms focused form controls below 16px/);
   assert.match(css, /@media \(hover: none\), \(pointer: coarse\), \(max-width: 900px\) \{[\s\S]*input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="file"\]\),[\s\S]*textarea,[\s\S]*select[\s\S]*font-size: 16px !important;/);
 });
@@ -109,6 +109,13 @@ test('Feedstr exposes a zap action that delegates NIP-57 payment to Idenstr', as
   assert.match(source, /\.\.\.profile,\s*name: profile\.name/s);
   assert.doesNotMatch(source, /class="note-action zap-action"/);
   assert.doesNotMatch(source, /<span>Zap<\/span>/);
+  assert.match(source, /function flashZapButtonForEvent/);
+  assert.match(source, /flashZapButtonForEvent\(event\.id\)/);
+  assert.match(source, /button\.classList\.add\('zapped'\)/);
+  assert.match(css, /\.note-action\.zapped/);
+  assert.match(css, /@keyframes zap-flash/);
+  assert.match(css, /var\(--bitcoin-gold\)/);
+  assert.match(css, /drop-shadow\(0 0 8px rgba\(247, 147, 26, 0\.9\)\)/);
   assert.match(css, /\.zap-preset\.selected/);
 });
 
@@ -134,8 +141,14 @@ test('Feedstr one-tap zaps a configurable default amount and keeps the modal on 
   assert.match(source, /id="zap-settings-btn"/);
   assert.match(source, /id="zap-wallet-chip"/);
   assert.match(source, /function showZapSettings/);
-  assert.match(source, /zapSettingsBtn.onclick = \(\) => \{ closeMobileMenu\(\); showZapSettings\(\); \}/);
+  assert.match(source, /zapSettingsBtn.onclick = \(\) => \{ closeMobileMenu\(\); showZapSettings\(\); refreshZapWalletBalance\(\); \}/);
   assert.match(source, /function refreshZapWalletBalance/);
+  // Boot uses the cached db-only read; the live NWC balance check is on demand
+  // and post-zap refreshes are debounced so zap bursts coalesce into one check.
+  assert.match(source, /function loadZapWalletCached/);
+  assert.match(source, /loadZapWalletCached\(\);/);
+  assert.doesNotMatch(source, /refreshMuteSets\(\);\s*refreshZapWalletBalance\(\)/);
+  assert.match(source, /function scheduleZapWalletRefresh/);
   assert.match(source, /api\('\/api\/v1\/idenstr\/zaps\/wallet\/balance', \{ method: 'POST' \}/);
   assert.match(source, /formatWalletSats/);
   assert.match(source, /walletRelativeTime/);
@@ -294,6 +307,22 @@ test('reply draft boxes survive feed reconciliation while typing', async () => {
   assert.match(source, /parent\.insertBefore\(replyBox, el\.nextSibling\)/);
   assert.match(source, /box\.dataset\.replyFor = event\.id/);
   assert.match(source, /querySelector\(`:scope > \.reply-box\[data-reply-for=/);
+});
+
+test('reply boxes hide the mobile compose FAB only while the reply UI is active', async () => {
+  const source = await readFile(html, 'utf8');
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /function setInlineReplyActive/);
+  assert.match(source, /document\.body\.classList\.toggle\('inline-reply-active'/);
+  assert.match(source, /function refreshInlineReplyActive/);
+  assert.match(source, /document\.querySelector\('\.reply-box:focus-within'\)/);
+  assert.match(source, /function removeReplyBox/);
+  assert.match(source, /cancelBtn\.onclick = \(\) => removeReplyBox\(box\)/);
+  assert.match(source, /box\.addEventListener\('focusin', \(\) => setInlineReplyActive\(true\)\)/);
+  assert.match(source, /box\.addEventListener\('focusout', \(\) => setTimeout\(refreshInlineReplyActive, 0\)\)/);
+  assert.match(source, /refreshInlineReplyActive\(\);\n\}/);
+  assert.doesNotMatch(css, /body:has\(\.reply-box\) \.compose-fab/);
+  assert.match(css, /body\.inline-reply-active \.compose-fab,\s*body:has\(\.reply-box:focus-within\) \.compose-fab \{ display: none; \}/);
 });
 
 test('reply notes show a quiet inline cue and open the conversation in-column', async () => {

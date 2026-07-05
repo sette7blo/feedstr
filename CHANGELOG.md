@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Fixed the zap wallet chip showing a red `wallet unavailable` state when NWC simply is not connected yet (now amber `connect NWC in Idenstr`) and hiding the cached balance during transient wallet failures. Also reduced NWC wallet traffic: page load now reads Idenstr's cached wallet state instead of doing a live balance check, the live check runs when zap settings open (updating the modal in place, without wiping the amount field), and post-zap balance refreshes are debounced so a burst of zaps coalesces into one check.
+- Added an orange flash animation to the note zap/lightning action after a successful one-tap or custom zap.
+- Added full profile headers to profile columns with banner, large avatar, kind:0 bio/metadata, website, NIP-05, zap address, and profile actions above the note list.
+- Changed the iOS reply/FAB behavior so the floating compose pencil hides only while an inline reply box is actively focused, and comes back after the reply UI is closed or focus leaves it.
 - Moved the relay/follow count under the Zap wallet chip in the left pane, and turned the wallet summary into a Settings-style chip that opens dedicated zap settings for the default one-tap amount and wallet refresh.
 - Restyled the note zap action to match the other actions: dim gray with the standard hover color instead of always-gold, and dropped the redundant `Zap` text label.
 
