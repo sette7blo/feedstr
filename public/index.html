@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico?v=feedstr-fd-logo" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png?v=feedstr-fd-logo" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=feedstr-fd-logo" />
-  <link rel="stylesheet" href="./styles.css?v=zap-settings-chip-1" />
+  <link rel="stylesheet" href="./styles.css?v=zap-flash-1" />
 </head>
 <body>
 
@@ -230,7 +230,7 @@ async function boot() {
     state.zapDefaultSats = await loadZapDefault();
     state.mutes = normalizeMutes(mutesResponse || await loadMutes());
     refreshMuteSets();
-    refreshZapWalletBalance();
+    loadZapWalletCached();
     renderColumns();
     for (const col of state.columns) hydrateColumnCache(col);
     connectRelays();
@@ -312,6 +312,37 @@ function renderZapWalletSummary() {
   }
   chip.className = `connection-chip zap-settings-chip ${stateClass}`;
   statusEl.querySelector('.connection-chip-text').textContent = value;
+  // Keep the zap-settings modal terminal in sync without re-rendering the
+  // whole modal (which would wipe the default-amount input mid-edit).
+  const term = document.getElementById('zap-wallet-terminal');
+  if (term) {
+    term.className = `terminal-mini ${wallet.error ? 'bad' : (wallet.configured ? 'ok' : 'warn')}`;
+    term.textContent = `$ feedstr zap-wallet\n${zapWalletSummaryText()}`;
+  }
+  const orb = document.getElementById('zap-wallet-orb');
+  if (orb) {
+    orb.className = `status-orb ${wallet.configured ? 'ok' : 'warn'}`;
+    orb.textContent = wallet.configured ? 'ready' : 'setup';
+  }
+}
+
+let zapWalletRefreshTimer = null;
+// Coalesce bursts of zaps into a single live NWC balance check.
+function scheduleZapWalletRefresh() {
+  clearTimeout(zapWalletRefreshTimer);
+  zapWalletRefreshTimer = setTimeout(() => { zapWalletRefreshTimer = null; refreshZapWalletBalance(); }, 4000);
+}
+
+// Boot path: read Idenstr's cached wallet state (db-only, no NWC round-trip).
+// The live balance check runs only on demand — opening zap settings, the
+// Refresh button, or after a zap.
+async function loadZapWalletCached() {
+  try {
+    state.zapWallet = { ...(await api('/api/v1/idenstr/zaps/wallet')), loading: false };
+  } catch (err) {
+    state.zapWallet = { loading: false, configured: false, balanceMsat: null, balanceAt: null, error: err.message };
+  }
+  renderZapWalletSummary();
 }
 
 async function refreshZapWalletBalance() {
@@ -320,10 +351,14 @@ async function refreshZapWalletBalance() {
   try {
     state.zapWallet = await api('/api/v1/idenstr/zaps/wallet/balance', { method: 'POST' });
   } catch (err) {
+    // Live balance failed — fall back to Idenstr's cached wallet state so an
+    // unconfigured wallet reads "connect NWC" and a cached balance stays
+    // visible. Only surface the error when even the cached read fails.
     try {
       state.zapWallet = await api('/api/v1/idenstr/zaps/wallet');
-    } catch {}
-    state.zapWallet = { ...(state.zapWallet || {}), loading: false, error: err.message };
+    } catch {
+      state.zapWallet = { ...(state.zapWallet || {}), error: err.message };
+    }
   } finally {
     state.zapWallet.loading = false;
     renderZapWalletSummary();
@@ -333,8 +368,8 @@ async function refreshZapWalletBalance() {
 function formatWalletSats(msat) {
   const sats = Math.floor(Number(msat) / 1000);
   if (!Number.isFinite(sats)) return 'balance unknown';
-  if (sats >= 1000000) return `${(sats / 1000000).toFixed(2).replace(/\.00$/, '')}M sats`;
-  if (sats >= 1000) return `${(sats / 1000).toFixed(sats >= 10000 ? 0 : 1).replace(/\.0$/, '')}k sats`;
+  if (sats >= 1000000) return `${Number((sats / 1000000).toFixed(2))}M sats`;
+  if (sats >= 1000) return `${Number((sats / 1000).toFixed(sats >= 10000 ? 0 : 1))}k sats`;
   return `${sats} sats`;
 }
 
@@ -386,7 +421,7 @@ function showZapSettings() {
         <h2>Zap wallet</h2>
         <p class="settings-copy">Set the default one-tap zap amount. Hold a note's lightning bolt, or right-click it, when you want a custom amount and comment.</p>
       </div>
-      <span class="status-orb ${state.zapWallet?.configured ? 'ok' : 'warn'}">${state.zapWallet?.configured ? 'ready' : 'setup'}</span>
+      <span id="zap-wallet-orb" class="status-orb ${state.zapWallet?.configured ? 'ok' : 'warn'}">${state.zapWallet?.configured ? 'ready' : 'setup'}</span>
     </div>
 
     <div class="connection-section">
@@ -394,7 +429,7 @@ function showZapSettings() {
         <span>Wallet</span>
         <button class="btn btn-ghost btn-mini" type="button" id="zap-wallet-refresh">Refresh</button>
       </div>
-      <div class="terminal-mini ${state.zapWallet?.error ? 'bad' : (state.zapWallet?.configured ? 'ok' : 'warn')}">$ feedstr zap-wallet\n${esc(zapWalletSummaryText())}</div>
+      <div id="zap-wallet-terminal" class="terminal-mini ${state.zapWallet?.error ? 'bad' : (state.zapWallet?.configured ? 'ok' : 'warn')}">$ feedstr zap-wallet\n${esc(zapWalletSummaryText())}</div>
     </div>
 
     <div class="connection-section">
@@ -414,9 +449,10 @@ function showZapSettings() {
   document.getElementById('zap-settings-close').onclick = closeModal;
   document.getElementById('zap-default-form')?.addEventListener('submit', handleZapDefaultSubmit);
   document.getElementById('zap-wallet-refresh')?.addEventListener('click', async (e) => {
-    setButtonState(e.currentTarget, 'busy', 'Refreshing...');
+    const btn = e.currentTarget;
+    setButtonState(btn, 'busy', 'Refreshing...');
     await refreshZapWalletBalance();
-    showZapSettings();
+    setButtonState(btn, 'reset');
   });
   modal.classList.add('open');
 }
@@ -968,7 +1004,7 @@ function profileNeedsRefresh(pubkey, options = {}) {
 
 function profileDisplayChanged(existing, next) {
   if (!existing) return true;
-  const fields = ['name', 'display_name', 'displayName', 'picture', ...ZAP_ADDRESS_FIELD_NAMES];
+  const fields = ['name', 'display_name', 'displayName', 'username', 'picture', 'banner', 'about', 'nip05', 'website', 'location', ...ZAP_ADDRESS_FIELD_NAMES];
   return fields.some(field => (existing?.[field] ?? '') !== (next?.[field] ?? '')) || zapAddressForProfile(existing) !== zapAddressForProfile(next);
 }
 
@@ -1080,6 +1116,9 @@ function scheduleRenderColumnFeed(col) {
 
 function rerenderColumnsForAuthor(pubkey) {
   for (const col of state.columns) {
+    // A profile column must re-render even with zero loaded notes, or its hero
+    // (follow/mute buttons, late-arriving kind:0 banner/bio) goes stale.
+    if (col.type === 'profile' && col.pubkey === pubkey) { scheduleRenderColumnFeed(col); continue; }
     if ((col.events ?? []).some(event => getEventActorPubkey(event) === pubkey || event.pubkey === pubkey)) scheduleRenderColumnFeed(col);
   }
 }
@@ -1310,6 +1349,123 @@ function emptyState(text, sub = '') {
   </div>`;
 }
 
+function clearFeedAfter(feedEl, after = null) {
+  let node = after ? after.nextSibling : feedEl.firstChild;
+  while (node) {
+    const next = node.nextSibling;
+    node.remove();
+    node = next;
+  }
+}
+
+function profileDisplayName(profile, pubkey) {
+  return profile?.display_name || profile?.displayName || profile?.name || profile?.username || shortNpub(pubkey);
+}
+
+function profileHeaderSignature(pubkey) {
+  const p = state.profiles.get(pubkey) ?? {};
+  return [
+    pubkey,
+    profileDisplayName(p, pubkey),
+    p.picture || '',
+    p.banner || '',
+    p.about || '',
+    p.nip05 || '',
+    p.website || '',
+    p.location || '',
+    zapAddressForProfile(p) || '',
+    isFollowing(pubkey) ? 'following' : 'not-following',
+    isMutedProfile(pubkey) ? 'muted' : 'not-muted'
+  ].join('|');
+}
+
+function ensureProfileHeader(feedEl, col) {
+  const pubkey = col.pubkey;
+  if (profileNeedsRefresh(pubkey)) queueProfileFetch(pubkey, { force: true });
+  let hero = feedEl.querySelector(':scope > .profile-hero');
+  const sig = profileHeaderSignature(pubkey);
+  if (!hero) {
+    hero = document.createElement('section');
+    hero.className = 'profile-hero';
+    feedEl.prepend(hero);
+  }
+  if (hero.dataset.sig !== sig) {
+    hero.dataset.sig = sig;
+    hero.innerHTML = profileHeroHtml(col);
+    wireProfileHero(hero, col);
+  }
+  return hero;
+}
+
+function profileHeroHtml(col) {
+  const pubkey = col.pubkey;
+  const profile = state.profiles.get(pubkey) ?? {};
+  const name = profileDisplayName(profile, pubkey);
+  const username = profile.name || profile.username || '';
+  const npub = encodeNprofile(pubkey);
+  const zapAddress = zapAddressForProfile(profile);
+  const banner = profile.banner || '';
+  const picture = profile.picture || '';
+  const about = profile.about || '';
+  const meta = [
+    profile.nip05 ? `<span class="profile-meta-chip">${iconSvg('at')}${esc(profile.nip05)}</span>` : '',
+    profile.website ? `<a class="profile-meta-chip" href="${esc(profileWebsiteHref(profile.website))}" target="_blank" rel="noopener noreferrer">${iconSvg('globe')}${esc(prettyUrl(profile.website))}</a>` : '',
+    profile.location ? `<span class="profile-meta-chip">${esc(profile.location)}</span>` : '',
+    zapAddress ? `<span class="profile-meta-chip zap">${iconSvg('zap')}${esc(zapAddress)}</span>` : ''
+  ].filter(Boolean).join('');
+  return `
+    <div class="profile-banner${banner ? '' : ' empty'}">${banner ? `<img src="${esc(banner)}" loading="lazy" alt="" onerror="this.closest('.profile-banner')?.classList.add('empty'); this.remove()" />` : ''}</div>
+    <div class="profile-identity">
+      <div class="profile-avatar-xl">${picture ? `<img src="${esc(picture)}" data-pubkey="${esc(pubkey)}" loading="lazy" alt="${esc(name)}" onerror="handleAvatarImageError(this)" />` : ''}</div>
+      <div class="profile-actions">
+        <button class="follow-toggle${isFollowing(pubkey) ? ' following' : ''}" type="button" data-profile-action="follow">${isFollowing(pubkey) ? 'Following' : '+ Follow'}</button>
+        <button class="follow-toggle mute-profile-toggle${isMutedProfile(pubkey) ? ' following' : ''}" type="button" data-profile-action="mute">${isMutedProfile(pubkey) ? 'Muted' : 'Mute'}</button>
+      </div>
+    </div>
+    <div class="profile-info">
+      <h3>${esc(name)}</h3>
+      ${username && username !== name ? `<div class="profile-handle">@${esc(username)}</div>` : ''}
+      <button class="profile-npub" type="button" data-profile-action="copy-npub" title="Copy nprofile">${esc(npub)}</button>
+      ${about ? `<p class="profile-about">${formatProfileAbout(about)}</p>` : '<p class="profile-about muted">No profile bio found yet.</p>'}
+      ${meta ? `<div class="profile-meta-grid">${meta}</div>` : ''}
+    </div>
+    <div class="profile-notes-label">Notes</div>
+  `;
+}
+
+function wireProfileHero(hero, col) {
+  hero.querySelector('[data-profile-action="follow"]')?.addEventListener('click', (e) => { e.stopPropagation(); toggleFollow(col); });
+  hero.querySelector('[data-profile-action="mute"]')?.addEventListener('click', (e) => { e.stopPropagation(); toggleMuteProfile(col); });
+  hero.querySelector('[data-profile-action="copy-npub"]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(encodeNprofile(col.pubkey));
+      toast('Profile copied', 'success');
+    } catch {
+      toast('Could not copy profile', 'error');
+    }
+  });
+}
+
+function formatProfileAbout(text) {
+  return linkifyText(String(text ?? '')).replace(/\n/g, '<br>');
+}
+
+function prettyUrl(url) {
+  try {
+    const parsed = new URL(profileWebsiteHref(url));
+    return parsed.hostname.replace(/^www\./, '') + parsed.pathname.replace(/\/$/, '');
+  } catch {
+    return url;
+  }
+}
+
+function profileWebsiteHref(url) {
+  const value = String(url ?? '').trim();
+  if (!value) return '';
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
 function renderColumnFeed(col) {
   const feedEl = document.querySelector(`[data-col="${col.id}"] .column-feed`);
   if (!feedEl) return;
@@ -1317,12 +1473,17 @@ function renderColumnFeed(col) {
   if (col.thread) return renderThread(col, feedEl);
   if (col.type === 'notifications') return renderNotificationFeed(col, feedEl);
 
+  const profileHeader = col.type === 'profile' ? ensureProfileHeader(feedEl, col) : null;
   const events = (col.events ?? [])
     .filter(e => e.kind === 1 && !isMuted(e))
     .slice(0, 200);
 
   if (!events.length) {
-    feedEl.innerHTML = emptyState('No notes yet', 'Nothing from this source in the last 24h');
+    clearFeedAfter(feedEl, profileHeader);
+    const empty = document.createElement('div');
+    if (profileHeader) empty.className = 'profile-notes-empty';
+    empty.innerHTML = emptyState('No notes yet', 'Nothing from this source in the last 24h');
+    feedEl.appendChild(empty);
     return;
   }
 
@@ -1333,7 +1494,8 @@ function renderColumnFeed(col) {
     keyOf: e => e.id,
     sigOf: e => noteProfileSignature(e),
     build: e => renderNote(e),
-    patch: (el, e) => updateNoteProfile(el, e)
+    patch: (el, e) => updateNoteProfile(el, e),
+    after: profileHeader
   });
 
   if (wasAtTop) feedEl.scrollTop = 0;
@@ -1690,6 +1852,7 @@ function reconcileChildren(parent, items, { keyOf, sigOf, build, patch = null, a
       prev = el;
     }
   }
+  refreshInlineReplyActive();
 }
 
 // Swap an avatar's <img> only when the picture URL actually changed, so a note
@@ -1998,11 +2161,24 @@ function renderAvatar(profile, pubkey, extraClass = '') {
 }
 
 // -- interactions --
+function setInlineReplyActive(active) {
+  document.body.classList.toggle('inline-reply-active', Boolean(active));
+}
+
+function refreshInlineReplyActive() {
+  setInlineReplyActive(Boolean(document.querySelector('.reply-box:focus-within')));
+}
+
+function removeReplyBox(box) {
+  box?.remove();
+  refreshInlineReplyActive();
+}
+
 function toggleReply(noteEl, event) {
   const parent = noteEl.parentElement;
   const escapedId = window.CSS?.escape ? CSS.escape(event.id) : event.id;
   const existing = parent?.querySelector(`:scope > .reply-box[data-reply-for="${escapedId}"]`);
-  if (existing) { existing.remove(); return; }
+  if (existing) { removeReplyBox(existing); return; }
 
   const box = document.createElement('div');
   box.className = 'reply-box';
@@ -2065,7 +2241,7 @@ function toggleReply(noteEl, event) {
       mediaInput.disabled = false;
     }
   };
-  cancelBtn.onclick = () => box.remove();
+  cancelBtn.onclick = () => removeReplyBox(box);
   sendBtn.onclick = async () => {
     const text = textarea.value.trim();
     if (!text) return;
@@ -2076,13 +2252,16 @@ function toggleReply(noteEl, event) {
         ['e', event.id, '', 'root'],
         ['p', event.pubkey]
       ]);
-      box.remove();
+      removeReplyBox(box);
     } catch (err) {
       sendBtn.textContent = 'Failed';
       setTimeout(() => { sendBtn.textContent = 'Reply'; sendBtn.disabled = false; }, 2000);
     }
   };
   noteEl.after(box);
+  box.addEventListener('focusin', () => setInlineReplyActive(true));
+  box.addEventListener('focusout', () => setTimeout(refreshInlineReplyActive, 0));
+  box.addEventListener('pointerdown', () => setInlineReplyActive(true));
   textarea.focus();
 }
 
@@ -2168,8 +2347,9 @@ async function quickZap(event, button) {
       zapAddress = await waitForZapAddress(event.pubkey, 3500);
     }
     const result = await zapNote({ event, amountSats, zapAddress });
+    flashZapButtonForEvent(event.id);
     toast(`Zapped ${result.amountSats ?? amountSats} sats`, 'success');
-    refreshZapWalletBalance();
+    scheduleZapWalletRefresh();
   } catch (err) {
     toast(`Zap failed: ${err.message}`, 'error');
   } finally {
@@ -2188,6 +2368,19 @@ function waitForZapAddress(pubkey, timeoutMs = 3500) {
       setTimeout(tick, 150);
     };
     tick();
+  });
+}
+
+function flashZapButtonForEvent(eventId) {
+  if (!eventId) return;
+  const escapedId = window.CSS?.escape ? CSS.escape(eventId) : eventId;
+  document.querySelectorAll(`.note[data-id="${escapedId}"] [data-action="zap"]`).forEach((button) => {
+    button.classList.remove('zapped');
+    // Restart the animation when the same visible note is zapped more than once.
+    void button.offsetWidth;
+    button.classList.add('zapped');
+    clearTimeout(button._zapFlashTimer);
+    button._zapFlashTimer = setTimeout(() => button.classList.remove('zapped'), 1400);
   });
 }
 
@@ -2317,8 +2510,9 @@ async function sendZap(event, form, zapAddress) {
     const result = await zapNote({ event, amountSats, comment: form.elements.comment.value.trim(), zapAddress: resolvedZapAddress });
     status.className = 'terminal-mini ok';
     status.textContent = `$ feedstr zap\nok: paid ${result.amountSats ?? amountSats} sats${result.feesPaid != null ? `\nfee: ${result.feesPaid} msat` : ''}${result.preimage ? `\npreimage: ${result.preimage.slice(0, 16)}…` : ''}`;
+    flashZapButtonForEvent(event.id);
     toast(`Zapped ${amountSats} sats`, 'success');
-    refreshZapWalletBalance();
+    scheduleZapWalletRefresh();
     // The zap is done — drop the dead "Send zap" button and turn the only
     // remaining action into a clear Close.
     submit.remove();
@@ -2847,7 +3041,7 @@ document.getElementById('columns').addEventListener('click', (e) => {
   }
 });
 idenstrSettingsBtn.onclick = () => { closeMobileMenu(); showIdenstrSettings(); };
-zapSettingsBtn.onclick = () => { closeMobileMenu(); showZapSettings(); };
+zapSettingsBtn.onclick = () => { closeMobileMenu(); showZapSettings(); refreshZapWalletBalance(); };
 mobileMenuToggle.onclick = () => toggleMobileMenu();
 mobileMenuBackdrop.onclick = () => closeMobileMenu();
 modal.onclick = (e) => { if (e.target === modal) closeModal(); };
@@ -3100,6 +3294,7 @@ function setFollowLocal(pubkey, name, following) {
   refreshFollowingSet();
   document.querySelectorAll(`.note-avatar[data-pubkey="${CSS.escape(pubkey)}"]`)
     .forEach(el => el.classList.toggle('following', following));
+  rerenderColumnsForAuthor(pubkey);
 }
 
 function toggleFollow(col) {
@@ -3373,6 +3568,7 @@ function setMuteProfileLocal(pubkey, name, muted) {
     state.mutes.entries = (state.mutes.entries ?? []).filter(e => !(e.type === 'pubkey' && e.value === pubkey));
   }
   refreshMuteSets();
+  rerenderColumnsForAuthor(pubkey);
 }
 
 function setMuteThreadLocal(threadId, muted) {

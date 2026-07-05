@@ -938,7 +938,146 @@ body {
 .note-action:hover { color: var(--purple-2); }
 .note-action.liked { color: var(--danger-red); }
 .note-action.reposted { color: var(--success-green); }
+.note-action.zapped {
+  color: var(--bitcoin-gold);
+  animation: zap-flash 1.35s ease-out;
+}
+.note-action.zapped svg {
+  filter: drop-shadow(0 0 8px rgba(247, 147, 26, 0.9));
+}
+@keyframes zap-flash {
+  0% { color: var(--bitcoin-gold); transform: scale(1); text-shadow: 0 0 0 rgba(247, 147, 26, 0); }
+  18% { color: var(--bitcoin-gold); transform: scale(1.28); text-shadow: 0 0 18px rgba(247, 147, 26, 0.95); }
+  42% { color: var(--bitcoin-gold); transform: scale(1.02); text-shadow: 0 0 11px rgba(247, 147, 26, 0.72); }
+  100% { color: var(--dim); transform: scale(1); text-shadow: 0 0 0 rgba(247, 147, 26, 0); }
+}
 .note-action svg { width: 15px; height: 15px; }
+
+/* Full profile header for profile columns — banner/avatar/kind:0 metadata above notes. */
+.profile-hero {
+  border-bottom: 1px solid rgba(188, 151, 255, 0.12);
+  background: linear-gradient(180deg, rgba(124, 60, 255, 0.08), rgba(4, 2, 8, 0.08));
+}
+.profile-banner {
+  height: 132px;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(181, 140, 255, 0.34), transparent 15rem),
+    linear-gradient(135deg, rgba(124, 60, 255, 0.34), rgba(247, 147, 26, 0.1));
+  overflow: hidden;
+}
+.profile-banner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.profile-banner.empty {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(181, 140, 255, 0.28), transparent 10rem),
+    radial-gradient(circle at 88% 0%, rgba(247, 147, 26, 0.14), transparent 9rem),
+    rgba(124, 60, 255, 0.1);
+}
+.profile-identity {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 0 14px;
+  margin-top: -38px;
+}
+.profile-avatar-xl {
+  width: 86px;
+  height: 86px;
+  border: 4px solid var(--panel-solid);
+  border-radius: 50%;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--sovereign-purple), #4d1fd1);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+}
+.profile-avatar-xl img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.profile-actions {
+  display: flex;
+  gap: 7px;
+  padding-bottom: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.profile-info {
+  padding: 8px 14px 0;
+}
+.profile-info h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+.profile-handle {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.profile-npub {
+  display: block;
+  max-width: 100%;
+  margin-top: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  font: 11px/1.3 ui-monospace, monospace;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: copy;
+}
+.profile-npub:hover { color: var(--purple-2); }
+.profile-about {
+  margin: 12px 0 0;
+  color: var(--text);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.profile-about.muted { color: var(--dim); }
+.profile-about a { color: var(--purple-2); text-decoration: none; }
+.profile-about a:hover { text-decoration: underline; }
+.profile-meta-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.profile-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(188, 151, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-meta-chip svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.profile-meta-chip.zap { color: var(--bitcoin-gold); border-color: rgba(247, 147, 26, 0.26); background: rgba(247, 147, 26, 0.08); }
+.profile-meta-chip:hover { border-color: var(--border-hot); color: var(--text); }
+.profile-notes-label {
+  margin-top: 14px;
+  padding: 9px 14px;
+  border-top: 1px solid rgba(188, 151, 255, 0.1);
+  color: var(--purple-2);
+  font: 900 11px/1 ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.profile-notes-empty .column-empty { padding-top: 32px; }
 
 .zap-form { display: flex; flex-direction: column; gap: 14px; }
 .zap-form .form-row { display: flex; flex-direction: column; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 700; }
@@ -1878,6 +2017,8 @@ body::after {
   .sidebar-footer { padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); }
   /* The mobile trigger is the floating button, not the sidebar button. */
   .compose-fab { display: flex; }
+  body.inline-reply-active .compose-fab,
+  body:has(.reply-box:focus-within) .compose-fab { display: none; }
   .sidebar-compose { display: none; }
   /* Compose modal behaves as a sheet that fills the available height so the
      textarea has room and the Post button clears the iOS keyboard. */
