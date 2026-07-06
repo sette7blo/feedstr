@@ -11,6 +11,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.3.0] — 2026-07-06
+
 - Fixed the zap wallet chip showing a red `wallet unavailable` state when NWC simply is not connected yet (now amber `connect NWC in Idenstr`) and hiding the cached balance during transient wallet failures. Also reduced NWC wallet traffic: page load now reads Idenstr's cached wallet state instead of doing a live balance check, the live check runs when zap settings open (updating the modal in place, without wiping the amount field), and post-zap balance refreshes are debounced so a burst of zaps coalesces into one check.
 - Added an orange flash animation to the note zap/lightning action after a successful one-tap or custom zap.
 - Added full profile headers to profile columns with banner, large avatar, kind:0 bio/metadata, website, NIP-05, zap address, and profile actions above the note list.
@@ -93,7 +95,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.3.0...HEAD
+[v0.3.0]: https://github.com/sette7blo/feedstr/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/sette7blo/feedstr/compare/v0.1.2...v0.2.0
 [v0.1.2]: https://github.com/sette7blo/feedstr/compare/v0.1.1...v0.1.2
 [v0.1.1]: https://github.com/sette7blo/feedstr/compare/v0.1.0...v0.1.1
