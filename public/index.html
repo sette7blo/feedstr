@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico?v=feedstr-fd-logo" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png?v=feedstr-fd-logo" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=feedstr-fd-logo" />
-  <link rel="stylesheet" href="./styles.css?v=raw-json-1" />
+  <link rel="stylesheet" href="./styles.css?v=compose-preview-1" />
 </head>
 <body>
 
@@ -115,6 +115,7 @@
       <textarea id="compose-text" placeholder="Share an update&hellip;"></textarea>
       <div class="mention-suggest hidden" id="compose-mention-suggest" role="listbox" aria-label="Mention suggestions"></div>
     </div>
+    <div class="compose-preview hidden" id="compose-preview" aria-label="Attachment preview"></div>
     <div class="compose-tags hidden" id="compose-tags" aria-label="Tagged people"></div>
     <div class="compose-media-status hidden" id="compose-media-status" role="status" aria-live="polite"></div>
     <div class="compose-actions">
@@ -138,7 +139,9 @@ const state = {
   subs: new Map(),
   sockets: new Map(),
   profileSockets: new Map(),
+  embeddedSockets: new Map(),
   notes: new Map(),
+  eventRelays: new Map(), // eventId -> Set of relay URLs where the event was seen
   liked: new Set(),
   mutes: { entries: [] }, // Idenstr kind:10000 mute list; suppresses keywords, people, threads, and events
   likeEvents: new Map(), // noteId -> our own kind:7 reaction event id (for un-like)
@@ -752,6 +755,7 @@ function connectRelay(url) {
     state._relayRetries?.delete(url);
     distributeSubscriptions();
     refreshVisibleMissingProfiles();
+    if (state._embeddedQueue?.size) scheduleEmbeddedFetch();
     // The private relay vaults every event you signed, so backfill your own
     // kind:7 reactions from it once to light up hearts on previously liked notes.
     if (url === state.config?.privateRelayUrl && !state._likedBackfilled) {
@@ -763,8 +767,8 @@ function connectRelay(url) {
   ws.onmessage = (msg) => {
     try {
       const data = JSON.parse(msg.data);
-      if (data[0] === 'EVENT') handleEvent(data[1], data[2]);
-      if (data[0] === 'EOSE') handleEose(data[1]);
+      if (data[0] === 'EVENT') handleEvent(data[1], data[2], url);
+      if (data[0] === 'EOSE') handleEose(data[1], url);
     } catch {}
   };
 
@@ -827,8 +831,8 @@ function sendProfileReqToDiscoveryRelays(subId, filter) {
     ws.onmessage = (msg) => {
       try {
         const data = JSON.parse(msg.data);
-        if (data[0] === 'EVENT') handleEvent(data[1], data[2]);
-        if (data[0] === 'EOSE') handleEose(data[1]);
+        if (data[0] === 'EVENT') handleEvent(data[1], data[2], url);
+        if (data[0] === 'EOSE') handleEose(data[1], url);
       } catch {}
     };
     ws.onclose = () => state.profileSockets.delete(url);
@@ -866,8 +870,9 @@ function insertEventSorted(events, event) {
 }
 
 // -- event handling --
-function handleEvent(subId, event) {
+function handleEvent(subId, event, relayUrl = '') {
   if (!event || !event.id) return;
+  rememberEventRelay(event.id, relayUrl);
 
   // private-relay backfill of your own kind:7 reactions — record liked note ids
   // without caching the reaction events themselves.
@@ -910,7 +915,9 @@ function handleEvent(subId, event) {
 
   // cache note
   if (event.kind === 1 || event.kind === 6 || event.kind === 7 || event.kind === 9735) {
+    const wasMissing = !state.notes.has(event.id);
     state.notes.set(event.id, event);
+    if (wasMissing) scheduleRerenderAllColumns();
   }
 
   // cache profile
@@ -968,7 +975,17 @@ function handleEvent(subId, event) {
   scheduleCacheColumn(col);
 }
 
-function handleEose(subId) {
+function rememberEventRelay(eventId, relayUrl) {
+  if (!eventId || !relayUrl) return;
+  let relays = state.eventRelays.get(eventId);
+  if (!relays) {
+    relays = new Set();
+    state.eventRelays.set(eventId, relays);
+  }
+  relays.add(relayUrl);
+}
+
+function handleEose(subId, relayUrl = '') {
   const sub = state.subs.get(subId);
   if (!sub) return;
   if (sub.likedBackfill) {
@@ -980,6 +997,12 @@ function handleEose(subId) {
     return;
   }
   if (sub.oneshot) {
+    if (sub.expectedEoses > 1) {
+      if (!sub._eoseRelays) sub._eoseRelays = new Set();
+      sub._eoseRelays.add(relayUrl || `unknown-${sub._eoseRelays.size}`);
+      if (sub._eoseRelays.size < sub.expectedEoses) return;
+    }
+    clearTimeout(sub._closeTimer);
     unsubscribe(subId);
     if (sub.embedded) {
       scheduleRerenderAllColumns();
@@ -1143,8 +1166,7 @@ function scheduleRerenderAllColumns() {
 }
 
 function fetchEmbeddedEvent(eventId, relayHints = []) {
-  if (!eventId || state.notes.has(eventId) || state.embeddedEventFetchTried.has(eventId)) return;
-  state.embeddedEventFetchTried.add(eventId);
+  if (!eventId || state.notes.has(eventId) || state.embeddedEventFetchTried.has(eventId) || state._embeddedQueue?.has(eventId)) return;
   if (!state._embeddedQueue) state._embeddedQueue = new Map();
   state._embeddedQueue.set(eventId, relayHints);
   scheduleEmbeddedFetch();
@@ -1162,14 +1184,58 @@ function scheduleEmbeddedFetch() {
     const ids = entries.map(([eventId]) => eventId);
     const subId = `embed_${Date.now()}`;
     const filter = { kinds: [1], ids, limit: ids.length };
-    state.subs.set(subId, { filters: [filter], columnId: null, oneshot: true, embedded: true, allRelays: true });
-    const hintSockets = [...new Set(entries.flatMap(([, hints]) => hints ?? []))]
-      .map(url => state.sockets.get(url))
-      .filter(ws => ws?.readyState === WebSocket.OPEN);
-    for (const ws of hintSockets) ws.send(JSON.stringify(['REQ', subId, filter]));
-    sendToAll(['REQ', subId, filter]);
+    const hintUrls = [...new Set(entries.flatMap(([, hints]) => hints ?? []))].filter(Boolean);
+    const targetSockets = [...new Set([
+      ...state.sockets.values(),
+      ...state.profileSockets.values(),
+      ...state.embeddedSockets.values(),
+      ...hintUrls.map(url => state.sockets.get(url) || state.profileSockets.get(url) || state.embeddedSockets.get(url)).filter(Boolean)
+    ])].filter(ws => ws?.readyState === WebSocket.OPEN);
+    const pendingHintSockets = hintUrls
+      .filter(url => !(state.sockets.get(url)?.readyState === WebSocket.OPEN || state.profileSockets.get(url)?.readyState === WebSocket.OPEN || state.embeddedSockets.get(url)?.readyState === WebSocket.OPEN))
+      .map(connectEmbeddedHintRelay)
+      .filter(Boolean);
+    if (!targetSockets.length && !pendingHintSockets.length) {
+      for (const [eventId, hints] of entries) queue.set(eventId, hints);
+      setTimeout(scheduleEmbeddedFetch, 750);
+      return;
+    }
+    for (const [eventId] of entries) state.embeddedEventFetchTried.add(eventId);
+    const expectedEoses = targetSockets.length + pendingHintSockets.length;
+    const sub = { filters: [filter], columnId: null, oneshot: true, embedded: true, allRelays: true, expectedEoses };
+    sub._closeTimer = setTimeout(() => {
+      if (!state.subs.has(subId)) return;
+      unsubscribe(subId);
+      scheduleRerenderAllColumns();
+    }, 4500);
+    state.subs.set(subId, sub);
+    for (const ws of targetSockets) ws.send(JSON.stringify(['REQ', subId, filter]));
+    const payload = JSON.stringify(['REQ', subId, filter]);
+    for (const ws of pendingHintSockets) ws.addEventListener('open', () => ws.send(payload), { once: true });
     if (queue.size) scheduleEmbeddedFetch();
   }, 350);
+}
+
+function connectEmbeddedHintRelay(url) {
+  if (!url || state.sockets.has(url) || state.profileSockets.has(url)) return null;
+  let ws = state.embeddedSockets.get(url);
+  if (ws && ws.readyState !== WebSocket.CLOSED) return ws;
+  try {
+    ws = new WebSocket(url);
+  } catch {
+    return null;
+  }
+  state.embeddedSockets.set(url, ws);
+  ws.onmessage = (msg) => {
+    try {
+      const data = JSON.parse(msg.data);
+      if (data[0] === 'EVENT') handleEvent(data[1], data[2], url);
+      if (data[0] === 'EOSE') handleEose(data[1], url);
+    } catch {}
+  };
+  ws.onclose = () => state.embeddedSockets.delete(url);
+  ws.onerror = () => ws.close();
+  return ws;
 }
 
 // -- column rendering --
@@ -1290,7 +1356,7 @@ function startColumnSub(col) {
   unsubscribe(subId);
 
   const now = Math.floor(Date.now() / 1000);
-  const since = now - 86400; // last 24h
+  const since = now - 86400 * 7; // last 7 days for scrollable timelines
   let filters;
 
   const followPubkeys = state.following.map(f => f.pubkey).filter(Boolean);
@@ -1298,23 +1364,23 @@ function startColumnSub(col) {
   switch (col.type) {
     case 'home':
       if (!state.identity?.pubkey) return;
-      filters = [{ kinds: [1], authors: [state.identity.pubkey], since: now - 86400 * 30, limit: 100 }];
+      filters = [{ kinds: [1], authors: [state.identity.pubkey], since: now - 86400 * 30, limit: 500 }];
       break;
     case 'following':
       if (!followPubkeys.length) return;
-      filters = [{ kinds: [1], authors: followPubkeys, since, limit: 100 }];
+      filters = [{ kinds: [1], authors: followPubkeys, since, limit: 500 }];
       break;
     case 'mentions':
       if (!state.identity?.pubkey) return;
-      filters = [{ kinds: [1], '#p': [state.identity.pubkey], since, limit: 100 }];
+      filters = [{ kinds: [1], '#p': [state.identity.pubkey], since, limit: 500 }];
       break;
     case 'hashtag':
       if (!col.tag) return;
-      filters = [{ kinds: [1], '#t': [col.tag.toLowerCase()], since, limit: 100 }];
+      filters = [{ kinds: [1], '#t': [col.tag.toLowerCase()], since, limit: 500 }];
       break;
     case 'profile':
       if (!col.pubkey) return;
-      filters = [{ kinds: [1], authors: [col.pubkey], since: now - 86400 * 7, limit: 100 }];
+      filters = [{ kinds: [1], authors: [col.pubkey], since: now - 86400 * 30, limit: 500 }];
       break;
     case 'notifications':
       if (!state.identity?.pubkey) return;
@@ -1325,7 +1391,7 @@ function startColumnSub(col) {
       break;
     case 'custom':
       if (!col.pubkeys?.length) return;
-      filters = [{ kinds: [1], authors: col.pubkeys, since, limit: 100 }];
+      filters = [{ kinds: [1], authors: col.pubkeys, since, limit: 500 }];
       break;
     default: return;
   }
@@ -1476,7 +1542,7 @@ function renderColumnFeed(col) {
   const profileHeader = col.type === 'profile' ? ensureProfileHeader(feedEl, col) : null;
   const events = (col.events ?? [])
     .filter(e => e.kind === 1 && !isMuted(e))
-    .slice(0, 200);
+    .slice(0, 500);
 
   if (!events.length) {
     clearFeedAfter(feedEl, profileHeader);
@@ -1775,10 +1841,10 @@ function actorProfileSignature(pubkey) {
   return `${pubkey}:${p?.display_name || p?.displayName || p?.name || ''}:${p?.picture || ''}`;
 }
 
-// A compact fingerprint of every profile a note displays (author, repost actor,
-// and p-tagged mentions/reply targets). The reconciler compares it to decide
-// whether a cached note element can be reused as-is or must be repainted because
-// a name or avatar has since loaded.
+// A compact fingerprint of every dynamic thing a note displays (author/referenced
+// profile names + avatars, and whether embedded quote/event cards have resolved).
+// The reconciler compares it to decide whether a cached note element can be reused
+// as-is or must be repainted because visible content changed.
 function noteProfileSignature(event) {
   const pubkeys = new Set([event.pubkey]);
   const actor = getEventActorPubkey(event);
@@ -1788,6 +1854,9 @@ function noteProfileSignature(event) {
   }
   let sig = '';
   for (const pubkey of pubkeys) sig += actorProfileSignature(pubkey) + '|';
+  for (const ref of extractNostrRefs(expandIndexedNostrReferences(event?.content ?? '', event), { queue: false }).filter(ref => ref.kind === 'event')) {
+    sig += `event:${ref.eventId}:${state.notes.has(ref.eventId) ? 'resolved' : 'missing'}|`;
+  }
   return sig;
 }
 
@@ -1868,14 +1937,18 @@ function updateAvatarEl(wrap, profile, pubkey) {
     : '';
 }
 
-// Update the profile-dependent bits of an existing note (author name, avatar,
-// and the "Replying to …" cue) in place, without rebuilding the element.
+// Update the dynamic bits of an existing note in place: author/avatar, reply cue,
+// and note content. Content must be refreshed because quote cards, profile mentions,
+// media previews, and parent previews can resolve after the row first painted.
 function updateNoteProfile(el, event) {
   const profile = state.profiles.get(event.pubkey) ?? {};
   const name = profile.display_name || profile.displayName || profile.name || shortNpub(event.pubkey);
   const authorEl = el.querySelector(':scope > .note-header > .note-meta > .note-author');
   if (authorEl) authorEl.textContent = name;
   updateAvatarEl(el.querySelector(':scope > .note-header > .note-avatar'), profile, event.pubkey);
+
+  const contentEl = el.querySelector(':scope > .note-content');
+  if (contentEl) contentEl.innerHTML = formatContent(event.content, event);
 
   const rc = el.querySelector(':scope > .reply-context');
   if (rc) {
@@ -2185,6 +2258,7 @@ function toggleReply(noteEl, event) {
   box.dataset.replyFor = event.id;
   box.innerHTML = `
     <textarea placeholder="Reply..."></textarea>
+    <div class="reply-preview compose-preview hidden" aria-label="Attachment preview"></div>
     <div class="reply-media-status compose-media-status hidden" role="status" aria-live="polite"></div>
     <div class="reply-actions">
       <input class="reply-media-input compose-media-input" type="file" accept="image/*" hidden aria-hidden="true" tabindex="-1" />
@@ -2197,6 +2271,7 @@ function toggleReply(noteEl, event) {
     </div>
   `;
   const textarea = box.querySelector('textarea');
+  attachComposePreview(textarea, box.querySelector('.reply-preview'));
   const mediaInput = box.querySelector('.reply-media-input');
   const mediaBtn = box.querySelector('.reply-media-btn');
   const mediaStatus = box.querySelector('.reply-media-status');
@@ -2360,11 +2435,21 @@ async function copyRawEventText(text, successMessage) {
 // mentionTagsFromContent turns that reference into a NIP-18 `q` tag on publish.
 function quoteNote(event) {
   openCompose();
-  const ref = `nostr:${encodeNote(event.id)}`;
+  const relays = eventRelayHints(event.id);
+  const ref = `nostr:${relays.length ? encodeNevent(event.id, relays) : encodeNote(event.id)}`;
   composeText.value = composeText.value.trim() ? `${composeText.value}\n\n${ref}` : `\n\n${ref}`;
   composeText.dispatchEvent(new Event('input'));
   composeText.focus();
   composeText.setSelectionRange(0, 0);
+}
+
+// Relay hints for nevent references. The private relay is excluded: its URL is
+// a LAN address that must never leak into published notes and is unreachable
+// for anyone else anyway.
+function eventRelayHints(eventId) {
+  return [...(state.eventRelays.get(eventId) ?? [])]
+    .filter(url => url && url !== state.config?.privateRelayUrl)
+    .slice(0, 3);
 }
 
 // Bolt button: a short tap one-tap zaps the saved default; a deliberate
@@ -2690,6 +2775,7 @@ const composeSend = document.getElementById('compose-send');
 const composeMediaInput = document.getElementById('compose-media-input');
 const composeMediaBtn = document.getElementById('compose-media-btn');
 const composeMediaStatus = document.getElementById('compose-media-status');
+const composePreview = document.getElementById('compose-preview');
 const composeMentionSuggest = document.getElementById('compose-mention-suggest');
 const composeMentionState = { open: false, query: '', start: -1, end: -1, selected: 0, matches: [] };
 let composeMediaUploadInFlight = false;
@@ -2752,6 +2838,7 @@ composeText.addEventListener('input', () => {
   syncComposeMentions();
   updateComposeMentionSuggestions();
 });
+attachComposePreview(composeText, composePreview);
 composeText.addEventListener('click', updateComposeMentionSuggestions);
 composeText.addEventListener('keydown', handleComposeMentionKeydown);
 composeText.addEventListener('blur', () => setTimeout(hideComposeMentionSuggestions, 120));
@@ -2828,6 +2915,46 @@ function appendComposeMediaUrl(url) {
 function setComposeMediaStatus(label, failed) {
   composeMediaBtn.classList.toggle('error', Boolean(failed));
   composeMediaBtn.querySelector('.compose-media-text').textContent = label;
+}
+
+// Live preview under a composer textarea: shows attached images and quoted-note
+// cards as they will render in the published note. extractNostrRefs queues the
+// relay fetch for quoted notes that are not cached yet, so the preview polls a
+// few rounds to swap "Looking across relays..." for the resolved card.
+function attachComposePreview(textarea, container) {
+  let timer = null;
+  let polls = 0;
+  const render = () => {
+    timer = null;
+    const raw = String(textarea.value ?? '');
+    const eventRefs = extractNostrRefs(raw).filter(ref => ref.kind === 'event');
+    const images = extractUrls(raw).filter(isImageUrl);
+    if (!eventRefs.length && !images.length) {
+      container.classList.add('hidden');
+      container.innerHTML = '';
+      return;
+    }
+    const imageHtml = images.length
+      ? `<div class="note-media-grid">${images.map(renderImagePreview).join('')}</div>`
+      : '';
+    container.innerHTML = `${imageHtml}${renderNostrEventPreviews(eventRefs)}`;
+    container.classList.remove('hidden');
+    if (eventRefs.some(ref => !state.notes.has(ref.eventId)) && polls < 12 && container.isConnected) {
+      polls += 1;
+      schedule(900);
+    }
+  };
+  const schedule = (delay = 200) => {
+    if (timer) return;
+    timer = setTimeout(render, delay);
+  };
+  textarea.addEventListener('input', () => { polls = 0; schedule(); });
+  // The preview is informational: quote cards must not trigger the nostr:
+  // protocol handler. Images keep their target=_blank so they can be inspected.
+  container.addEventListener('click', (e) => {
+    const link = e.target.closest('a');
+    if (link && !link.target) e.preventDefault();
+  });
 }
 
 function appendMediaUrlToTextarea(textarea, url) {
@@ -3076,6 +3203,7 @@ composeSend.addEventListener('click', async () => {
   try {
     await publishEvent(1, text, mentionTagsFromContent(text));
     composeText.value = '';
+    composeText.dispatchEvent(new Event('input')); // hides the attachment preview
     state.composeMentions = [];
     renderComposeTags();
     composeSend.textContent = 'Posted!';
@@ -3892,11 +4020,18 @@ async function hydrateColumnCache(col) {
     if (!Array.isArray(events) || !events.length) return;
     if (!col.events) col.events = [];
     const seen = new Set(col.events.map(e => e.id));
-    for (const event of events) if (!seen.has(event.id)) { col.events.push(event); seen.add(event.id); }
+    let globalNoteAdded = false;
+    for (const event of events) {
+      if (!event?.id) continue;
+      if (!state.notes.has(event.id)) globalNoteAdded = true;
+      state.notes.set(event.id, event);
+      if (!seen.has(event.id)) { col.events.push(event); seen.add(event.id); }
+    }
     col.events.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
     if (col.events.length > 500) col.events = col.events.slice(0, 500);
     col._ids = new Set(col.events.map(e => e.id));
     renderColumnFeed(col);
+    if (globalNoteAdded) scheduleRerenderAllColumns();
   } catch {}
 }
 
@@ -4223,13 +4358,15 @@ function renderNostrEventPreviews(refs) {
 function renderNostrEventCard(ref) {
   const event = state.notes.get(ref.eventId);
   if (!event) {
-    return `<div class="nostr-embed loading" data-event-id="${esc(ref.eventId)}"><span>Nostr event</span><strong>${esc(shortNpub(ref.eventId))}</strong><small>Loading from relays...</small></div>`;
+    return `<div class="nostr-embed loading" data-event-id="${esc(ref.eventId)}"><span>Quoted note</span><strong>Looking across relays...</strong><small>${esc(shortNpub(ref.eventId))}</small></div>`;
   }
   const profile = state.profiles.get(event.pubkey) ?? {};
   if (profileNeedsRefresh(event.pubkey)) queueProfileFetch(event.pubkey);
   const name = profile.display_name || profile.displayName || profile.name || shortNpub(event.pubkey);
   const preview = stripMarkup(formatContent(event.content ?? '', event)).slice(0, 180) || 'Nostr event';
-  return `<a class="nostr-embed" data-event-id="${esc(ref.eventId)}" href="nostr:${esc(encodeNote(ref.eventId))}" title="Open Nostr event"><span>Nostr event</span><strong>${esc(name)}</strong><small>${esc(preview)}</small></a>`;
+  const relays = [...new Set([...(ref.relays ?? []), ...eventRelayHints(ref.eventId)])];
+  const href = `nostr:${relays.length ? encodeNevent(ref.eventId, relays) : encodeNote(ref.eventId)}`;
+  return `<a class="nostr-embed" data-event-id="${esc(ref.eventId)}" href="${esc(href)}" title="Open quoted note"><span>Quoted note</span><strong>${esc(name)}${event.created_at ? ` · ${esc(relativeTime(event.created_at))}` : ''}</strong><small>${esc(preview)}</small></a>`;
 }
 
 function renderNostrProfileMention(ref) {
@@ -4296,6 +4433,15 @@ function isHex(value, length = null) {
 
 function encodeNote(eventId) {
   return nip19Encode('note', hexToBytes(eventId));
+}
+
+function encodeNevent(eventId, relays = []) {
+  const bytes = [0, 32, ...hexToBytes(eventId)];
+  for (const relay of relays.filter(Boolean).slice(0, 3)) {
+    const encoded = [...new TextEncoder().encode(relay)];
+    bytes.push(1, encoded.length, ...encoded);
+  }
+  return nip19Encode('nevent', bytes);
 }
 
 function encodeNprofile(pubkey, relays = []) {

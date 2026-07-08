@@ -10,7 +10,7 @@ test('mobile form controls stay at the iOS no-zoom font size', async () => {
   const source = await readFile(html, 'utf8');
   const css = await readFile(styles, 'utf8');
   assert.match(source, /maximum-scale=1/);
-  assert.match(source, /styles\.css\?v=raw-json-1/);
+  assert.match(source, /styles\.css\?v=compose-preview-1/);
   assert.match(css, /iOS Safari auto-zooms focused form controls below 16px/);
   assert.match(css, /@media \(hover: none\), \(pointer: coarse\), \(max-width: 900px\) \{[\s\S]*input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="file"\]\),[\s\S]*textarea,[\s\S]*select[\s\S]*font-size: 16px !important;/);
 });
@@ -309,7 +309,7 @@ test('note content renders inline image previews and link cards', async () => {
   assert.match(source, /rel="noopener noreferrer"/);
 });
 
-test('nostr event references render as event cards instead of raw URLs', async () => {
+test('nostr event references render as quote cards instead of raw URLs', async () => {
   const source = await readFile(html, 'utf8');
   assert.match(source, /function extractNostrEventRefs/);
   assert.match(source, /function extractNostrRefs/);
@@ -320,6 +320,69 @@ test('nostr event references render as event cards instead of raw URLs', async (
   assert.match(source, /fetchEmbeddedEvent\(ref\.eventId, ref\.relays\)/);
   assert.match(source, /nostr-embed/);
   assert.match(source, /\(\?:n\(\?:profile\|pub\|event\|ote\)\|event\)1/);
+  assert.match(source, /eventRelays: new Map\(\)/);
+  assert.match(source, /embeddedSockets: new Map\(\)/);
+  assert.match(source, /function rememberEventRelay/);
+  assert.match(source, /handleEvent\(data\[1\], data\[2\], url\)/);
+  assert.match(source, /function eventRelayHints/);
+  assert.match(source, /function encodeNevent/);
+  assert.match(source, /const expectedEoses = targetSockets\.length \+ pendingHintSockets\.length/);
+  assert.match(source, /state\.profileSockets\.values\(\)/);
+  assert.match(source, /function connectEmbeddedHintRelay/);
+  assert.match(source, /pendingHintSockets/);
+  assert.match(source, /ws\.addEventListener\('open', \(\) => ws\.send\(payload\), \{ once: true \}\)/);
+  assert.match(source, /state\._embeddedQueue\?\.has\(eventId\)/);
+  assert.match(source, /if \(!targetSockets\.length && !pendingHintSockets\.length\)/);
+  assert.match(source, /queue\.set\(eventId, hints\)/);
+  assert.match(source, /state\.embeddedEventFetchTried\.add\(eventId\)/);
+  assert.match(source, /event:\$\{ref\.eventId\}:\$\{state\.notes\.has\(ref\.eventId\) \? 'resolved' : 'missing'\}/);
+  assert.match(source, /contentEl\.innerHTML = formatContent\(event\.content, event\)/);
+  assert.match(source, /const wasMissing = !state\.notes\.has\(event\.id\)/);
+  assert.match(source, /if \(wasMissing\) scheduleRerenderAllColumns\(\)/);
+  assert.match(source, /let globalNoteAdded = false/);
+  assert.match(source, /if \(!state\.notes\.has\(event\.id\)\) globalNoteAdded = true/);
+  assert.match(source, /if \(globalNoteAdded\) scheduleRerenderAllColumns\(\)/);
+  assert.match(source, /state\.notes\.set\(event\.id, event\)/);
+  assert.match(source, /state\._embeddedQueue\?\.size\) scheduleEmbeddedFetch\(\)/);
+  assert.match(source, /sub\._closeTimer = setTimeout/);
+  assert.match(source, /sub\._eoseRelays\.size < sub\.expectedEoses\) return/);
+  assert.match(source, /handleEose\(data\[1\], url\)/);
+  assert.match(source, /relays\.length \? encodeNevent\(event\.id, relays\) : encodeNote\(event\.id\)/);
+  assert.match(source, /seenQ\.add\(ref\.eventId\); \/\/ NIP-18 quote reference/);
+  assert.match(source, /<span>Quoted note<\/span><strong>Looking across relays\.\.\.<\/strong>/);
+  assert.match(source, /<span>Quoted note<\/span><strong>\$\{esc\(name\)\}/);
+  // resolved cards must use the real relativeTime helper; timeAgo does not exist
+  assert.doesNotMatch(source, /\btimeAgo\(/);
+  assert.match(source, /relativeTime\(event\.created_at\)/);
+  // private relay URL must never be emitted as a relay hint in published nevents
+  assert.match(source, /url !== state\.config\?\.privateRelayUrl/);
+});
+
+test('composer and reply boxes live-preview quoted notes and attached images', async () => {
+  const source = await readFile(html, 'utf8');
+  assert.match(source, /function attachComposePreview/);
+  assert.match(source, /id="compose-preview"/);
+  assert.match(source, /class="reply-preview compose-preview hidden"/);
+  assert.match(source, /attachComposePreview\(composeText, composePreview\)/);
+  assert.match(source, /attachComposePreview\(textarea, box\.querySelector\('\.reply-preview'\)\)/);
+  // preview reuses the real note renderers so it matches the published look
+  assert.match(source, /images\.map\(renderImagePreview\)\.join\(''\)/);
+  assert.match(source, /renderNostrEventPreviews\(eventRefs\)/);
+  // quote-card links inside the preview must not fire the nostr: protocol handler
+  assert.match(source, /if \(link && !link\.target\) e\.preventDefault\(\)/);
+  const css = await readFile(styles, 'utf8');
+  assert.match(css, /\.compose-preview \{/);
+});
+
+test('normal feeds fetch and render deeper timelines instead of stopping early', async () => {
+  const source = await readFile(html, 'utf8');
+  assert.match(source, /const since = now - 86400 \* 7; \/\/ last 7 days for scrollable timelines/);
+  assert.match(source, /\.slice\(0, 500\)/);
+  assert.match(source, /authors: followPubkeys, since, limit: 500/);
+  assert.match(source, /'#p': \[state\.identity\.pubkey\], since, limit: 500/);
+  assert.match(source, /'#t': \[col\.tag\.toLowerCase\(\)\], since, limit: 500/);
+  assert.match(source, /authors: \[col\.pubkey\], since: now - 86400 \* 30, limit: 500/);
+  assert.match(source, /authors: col\.pubkeys, since, limit: 500/);
 });
 
 test('reply boxes support image uploads like the main composer', async () => {
