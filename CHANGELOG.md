@@ -11,6 +11,11 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Added a live attachment preview to the composer and reply boxes: quoted notes render as their quote card and uploaded or pasted image links render as the actual picture while writing, exactly as the published note will look.
+- Improved quote-note rendering: Feedstr now remembers relay provenance for seen events, restores cached notes into the global note lookup used by quote cards, marks note rows dirty when embedded quote/event cards move from missing to resolved, refreshes note content during in-place row patches so resolved quote cards actually replace `Looking across relays...`, quotes with `nevent` relay hints when available, opens hinted relay sockets for embedded quote lookups, waits for embedded-note lookup responses across relays instead of stopping on the first `EOSE`, and keeps quote lookups queued until relay sockets are actually open so cached-column hydration does not strand them at `Looking across relays...`.
+- Fixed resolved quote cards crashing the column render (undefined `timeAgo` helper) so quotes stuck on `Looking across relays...` now display once fetched.
+- Relay hints in published quote `nevent` references exclude the private relay URL so LAN addresses never leak into public notes.
+- Expanded normal feed depth: timeline columns now fetch up to 500 notes over a 7-day window and render up to 500 notes, while profile columns fetch up to 500 notes over 30 days.
 - Combined note repost and quote controls into one Boost action that opens a compact Repost / Quote note sheet, reducing note-row action clutter while keeping repost counts visible.
 - Added a dim per-note raw JSON inspector action that opens a read-only terminal-style modal with copy controls for the event JSON and event ID.
 
