@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico?v=feedstr-fd-logo" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png?v=feedstr-fd-logo" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=feedstr-fd-logo" />
-  <link rel="stylesheet" href="./styles.css?v=zap-flash-1" />
+  <link rel="stylesheet" href="./styles.css?v=raw-json-1" />
 </head>
 <body>
 
@@ -1929,20 +1929,20 @@ function renderNote(event, opts = {}) {
     <div class="note-content">${content}</div>
     <div class="note-actions">
       <button class="note-action" data-action="reply" title="Reply">${iconSvg('reply')}<span>${replyCountLabel(event.id)}</span></button>
-      <button class="note-action" data-action="repost" title="Repost">${iconSvg('repost')}<span>${repostCountLabel(event.id)}</span></button>
-      <button class="note-action" data-action="quote" title="Quote">${iconSvg('pen')}<span></span></button>
+      <button class="note-action" data-action="boost" title="Boost or quote" aria-haspopup="dialog">${iconSvg('repost')}<span>${repostCountLabel(event.id)}</span></button>
       <button class="note-action" data-action="zap" title="Zap ${state.zapDefaultSats} sats — hold or right-click for options">${iconSvg('zap')}<span></span></button>
       <button class="note-action${state.liked.has(event.id) ? ' liked' : ''}" data-action="like" title="Like">${iconSvg('heart')}<span>${reactionCountLabel(event.id)}</span></button>
       <button class="note-action" data-action="mute-thread" title="Mute thread">${iconSvg('volume-x')}<span></span></button>
+      <button class="note-action note-action-raw" data-action="raw-json" title="Raw event JSON" aria-label="View raw event JSON" aria-haspopup="dialog"><span aria-hidden="true">{}</span></button>
     </div>
   `;
 
   el.querySelector('[data-action="reply"]').onclick = () => toggleReply(el, event);
-  el.querySelector('[data-action="repost"]').onclick = () => doRepost(event);
-  el.querySelector('[data-action="quote"]').onclick = () => quoteNote(event);
+  el.querySelector('[data-action="boost"]').onclick = () => showBoostMenu(event);
   attachZapButton(el.querySelector('[data-action="zap"]'), event);
   el.querySelector('[data-action="like"]').onclick = (e) => doLike(event, e.currentTarget);
   el.querySelector('[data-action="mute-thread"]').onclick = () => muteThread(event);
+  el.querySelector('[data-action="raw-json"]').onclick = (e) => { e.stopPropagation(); showRawEventModal(event); };
 
   // Tapping a name or avatar opens that person's profile column (not the thread).
   const openAuthor = (clickEvent) => {
@@ -2275,6 +2275,84 @@ async function doRepost(event) {
   } catch (err) {
     console.error('Repost failed:', err);
     toast('Repost failed', 'error');
+  }
+}
+
+function showBoostMenu(event) {
+  const mc = document.getElementById('modal-content');
+  mc.className = 'modal boost-modal';
+  mc.innerHTML = `
+    <h2>Boost note</h2>
+    <button class="modal-option boost-option" type="button" data-boost-action="repost">
+      ${iconSvg('repost')}
+      <div class="modal-option-text"><strong>Repost</strong><span>Share this note as a Nostr repost.</span></div>
+    </button>
+    <button class="modal-option boost-option" type="button" data-boost-action="quote">
+      ${iconSvg('pen')}
+      <div class="modal-option-text"><strong>Quote note</strong><span>Open the composer with this note attached.</span></div>
+    </button>
+    <div class="modal-actions boost-actions">
+      <button class="btn btn-ghost" type="button" id="boost-cancel">Cancel</button>
+    </div>
+  `;
+  mc.querySelector('[data-boost-action="repost"]').onclick = async () => {
+    closeModal();
+    await doRepost(event);
+  };
+  mc.querySelector('[data-boost-action="quote"]').onclick = () => {
+    closeModal();
+    quoteNote(event);
+  };
+  mc.querySelector('#boost-cancel').onclick = () => closeModal();
+  modal.classList.add('boost-sheet');
+  modal.classList.add('open');
+  requestAnimationFrame(() => mc.querySelector('[data-boost-action="repost"]')?.focus());
+}
+
+function showRawEventModal(event) {
+  const mc = document.getElementById('modal-content');
+  const pretty = JSON.stringify(event, null, 2);
+  mc.className = 'modal raw-event-modal';
+  mc.innerHTML = `
+    <div class="raw-event-head">
+      <div>
+        <div class="section-label">Raw event</div>
+        <h2>JSON</h2>
+      </div>
+      <span class="raw-kind-pill">kind:${esc(String(event?.kind ?? '?'))}</span>
+    </div>
+    <div class="raw-event-meta">
+      <span title="Event ID">${esc(shortNpub(event?.id))}</span>
+      <span title="Author pubkey">${esc(shortNpub(event?.pubkey))}</span>
+      <span>${esc(relativeTime(event?.created_at))}</span>
+    </div>
+    <pre class="raw-json-viewer" id="raw-json-viewer" tabindex="0"></pre>
+    <div class="modal-actions raw-event-actions">
+      <button class="btn btn-ghost" type="button" id="raw-copy-json">Copy JSON</button>
+      <button class="btn btn-ghost" type="button" id="raw-copy-id">Copy event ID</button>
+      <button class="btn btn-primary" type="button" id="raw-close">Close</button>
+    </div>
+  `;
+  mc.querySelector('#raw-json-viewer').textContent = pretty;
+  mc.querySelector('#raw-copy-json').onclick = () => copyRawEventText(pretty, 'JSON copied');
+  mc.querySelector('#raw-copy-id').onclick = () => copyRawEventText(event?.id ?? '', 'Event ID copied');
+  mc.querySelector('#raw-close').onclick = () => closeModal();
+  modal.classList.add('raw-event-sheet');
+  modal.classList.add('open');
+  requestAnimationFrame(() => mc.querySelector('#raw-json-viewer')?.focus());
+}
+
+async function copyRawEventText(text, successMessage) {
+  if (!text) {
+    toast('Nothing to copy', 'error');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(successMessage, 'success');
+  } catch (err) {
+    console.error('Copy failed:', err);
+    toast('Could not copy', 'error');
   }
 }
 
@@ -3071,7 +3149,8 @@ function closeMobileMenu() {
 }
 
 function closeModal() {
-  modal.classList.remove('open');
+  modal.classList.remove('open', 'boost-sheet', 'raw-event-sheet');
+  document.getElementById('modal-content').className = 'modal';
 }
 
 function showAddColumnModal() {
@@ -3723,7 +3802,7 @@ function reactionCountLabel(noteId) {
 
 function updateEngagementBadges(noteId) {
   const sel = window.CSS?.escape ? CSS.escape(noteId) : noteId;
-  document.querySelectorAll(`.note[data-id="${sel}"] [data-action="repost"] span`)
+  document.querySelectorAll(`.note[data-id="${sel}"] [data-action="boost"] span`)
     .forEach(span => { span.textContent = repostCountLabel(noteId); });
   document.querySelectorAll(`.note[data-id="${sel}"] [data-action="like"] span`)
     .forEach(span => { span.textContent = reactionCountLabel(noteId); });

@@ -10,7 +10,7 @@ test('mobile form controls stay at the iOS no-zoom font size', async () => {
   const source = await readFile(html, 'utf8');
   const css = await readFile(styles, 'utf8');
   assert.match(source, /maximum-scale=1/);
-  assert.match(source, /styles\.css\?v=zap-flash-1/);
+  assert.match(source, /styles\.css\?v=raw-json-1/);
   assert.match(css, /iOS Safari auto-zooms focused form controls below 16px/);
   assert.match(css, /@media \(hover: none\), \(pointer: coarse\), \(max-width: 900px\) \{[\s\S]*input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="file"\]\),[\s\S]*textarea,[\s\S]*select[\s\S]*font-size: 16px !important;/);
 });
@@ -157,6 +157,45 @@ test('Feedstr one-tap zaps a configurable default amount and keeps the modal on 
   assert.match(source, /id="zap-default-form"/);
   assert.match(source, /id="zap-default-input"/);
   assert.match(source, /state\.zapDefaultSats = amount/);
+});
+
+test('Feedstr combines repost and quote behind one boost action sheet', async () => {
+  const source = await readFile(html, 'utf8');
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /data-action="boost"/);
+  assert.match(source, /title="Boost or quote"/);
+  assert.doesNotMatch(source, /data-action="repost"/);
+  assert.doesNotMatch(source, /data-action="quote"/);
+  assert.match(source, /function showBoostMenu\(event\)/);
+  assert.match(source, /data-boost-action="repost"/);
+  assert.match(source, /data-boost-action="quote"/);
+  assert.match(source, /await doRepost\(event\)/);
+  assert.match(source, /quoteNote\(event\)/);
+  assert.match(source, /modal\.classList\.add\('boost-sheet'\)/);
+  assert.match(source, /modal\.classList\.remove\('open', 'boost-sheet', 'raw-event-sheet'\)/);
+  assert.match(css, /\.boost-modal/);
+  assert.match(css, /#add-column-modal\.open\.boost-sheet/);
+});
+
+test('Feedstr exposes a dim raw JSON inspector per note', async () => {
+  const source = await readFile(html, 'utf8');
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /data-action="raw-json"/);
+  assert.match(source, /title="Raw event JSON"/);
+  assert.match(source, /aria-label="View raw event JSON"/);
+  assert.match(source, /function showRawEventModal\(event\)/);
+  assert.match(source, /JSON\.stringify\(event, null, 2\)/);
+  assert.match(source, /mc\.querySelector\('#raw-json-viewer'\)\.textContent = pretty/);
+  assert.match(source, /id="raw-copy-json"/);
+  assert.match(source, /id="raw-copy-id"/);
+  assert.match(source, /function copyRawEventText/);
+  assert.match(source, /navigator\.clipboard\.writeText\(text\)/);
+  assert.match(source, /modal\.classList\.add\('raw-event-sheet'\)/);
+  assert.match(source, /modal\.classList\.remove\('open', 'boost-sheet', 'raw-event-sheet'\)/);
+  assert.match(css, /\.note-action-raw/);
+  assert.match(css, /margin-left: auto/);
+  assert.match(css, /\.raw-json-viewer/);
+  assert.match(css, /\.modal\.raw-event-modal/);
 });
 
 test('composer can upload a device image through nostr.build and insert the returned URL', async () => {
