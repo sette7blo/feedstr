@@ -11,6 +11,9 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Combined note repost and quote controls into one Boost action that opens a compact Repost / Quote note sheet, reducing note-row action clutter while keeping repost counts visible.
+- Added a dim per-note raw JSON inspector action that opens a read-only terminal-style modal with copy controls for the event JSON and event ID.
+
 ## [v0.3.0] — 2026-07-06
 
 - Fixed the zap wallet chip showing a red `wallet unavailable` state when NWC simply is not connected yet (now amber `connect NWC in Idenstr`) and hiding the cached balance during transient wallet failures. Also reduced NWC wallet traffic: page load now reads Idenstr's cached wallet state instead of doing a live balance check, the live check runs when zap settings open (updating the modal in place, without wiping the amount field), and post-zap balance refreshes are debounced so a burst of zaps coalesces into one check.
