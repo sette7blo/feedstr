@@ -91,6 +91,10 @@ async function route(req, res) {
 }
 
 async function uploadMedia(req, res) {
+  // Mobile networks can stall reusing the connection after a large upload body,
+  // so upload responses close the socket. Only here — the rest of the chatty
+  // API keeps HTTP keep-alive on.
+  res.setHeader('Connection', 'close');
   const contentType = req.headers['content-type'] ?? '';
   if (!contentType.toLowerCase().startsWith('multipart/form-data')) {
     return sendJson(res, 400, { error: 'invalid_upload', message: 'Expected multipart/form-data upload' });
@@ -106,20 +110,8 @@ async function uploadMedia(req, res) {
     const body = await readRawBody(req, 20 * 1024 * 1024);
     console.info(`Media upload received: ${body.length} bytes`);
     const auth = await createNip98Authorization('POST', nostrBuildUploadUrl, body);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000);
-    const upstream = await fetch(nostrBuildUploadUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': String(body.length),
-        Authorization: auth
-      },
-      body,
-      signal: controller.signal
-    }).finally(() => clearTimeout(timeout));
-    const text = await upstream.text();
-    console.info(`nostr.build upload completed: ${upstream.status} in ${Date.now() - started}ms`);
+    const { upstream, text, attempt } = await postNostrBuildUpload({ contentType, body, auth });
+    console.info(`nostr.build upload completed: ${upstream.status} in ${Date.now() - started}ms (attempt ${attempt})`);
     let payload = null;
     try { payload = JSON.parse(text); } catch {}
     if (!upstream.ok) {
@@ -140,6 +132,34 @@ async function uploadMedia(req, res) {
     console.warn(`Media upload failed: ${message}`);
     sendJson(res, status, { error: err.code || 'media_upload_failed', message });
   }
+}
+
+async function postNostrBuildUpload({ contentType, body, auth }) {
+  let last = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90000);
+    try {
+      const upstream = await fetch(nostrBuildUploadUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': String(body.length),
+          Authorization: auth
+        },
+        body,
+        signal: controller.signal
+      });
+      const text = await upstream.text();
+      last = { upstream, text, attempt };
+      if (![500, 502, 503, 504].includes(upstream.status) || attempt === 2) return last;
+      console.warn(`nostr.build upload transient ${upstream.status}; retrying once`);
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  return last;
 }
 
 async function readRawBody(req, maxBytes) {

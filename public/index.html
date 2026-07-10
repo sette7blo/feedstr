@@ -1173,6 +1173,7 @@ function fetchEmbeddedEvent(eventId, relayHints = []) {
 }
 
 let _embeddedFetchTimer = null;
+let _embeddedRetryDelay = 750; // backoff while no relay socket is open
 function scheduleEmbeddedFetch() {
   if (_embeddedFetchTimer) return;
   _embeddedFetchTimer = setTimeout(() => {
@@ -1197,9 +1198,16 @@ function scheduleEmbeddedFetch() {
       .filter(Boolean);
     if (!targetSockets.length && !pendingHintSockets.length) {
       for (const [eventId, hints] of entries) queue.set(eventId, hints);
-      setTimeout(scheduleEmbeddedFetch, 750);
+      // No relay socket to ask yet. Retry with backoff instead of polling
+      // forever while offline; once any relay connects, its onopen drains the
+      // queue anyway, so after ~30s of failures just wait for that.
+      if (_embeddedRetryDelay <= 12000) {
+        setTimeout(scheduleEmbeddedFetch, _embeddedRetryDelay);
+        _embeddedRetryDelay *= 2;
+      }
       return;
     }
+    _embeddedRetryDelay = 750;
     for (const [eventId] of entries) state.embeddedEventFetchTried.add(eventId);
     const expectedEoses = targetSockets.length + pendingHintSockets.length;
     const sub = { filters: [filter], columnId: null, oneshot: true, embedded: true, allRelays: true, expectedEoses };
@@ -2834,7 +2842,7 @@ setInterval(() => {
 }, 60000);
 
 composeText.addEventListener('input', () => {
-  composeSend.disabled = !composeText.value.trim();
+  updateComposeSendState();
   syncComposeMentions();
   updateComposeMentionSuggestions();
 });
@@ -2847,6 +2855,10 @@ composeMediaBtn.addEventListener('click', () => {
   composeMediaInput.click();
 });
 composeMediaInput.addEventListener('change', handleComposeMediaChange);
+
+function updateComposeSendState() {
+  composeSend.disabled = composeMediaUploadInFlight || !composeText.value.trim();
+}
 
 async function handleComposeMediaChange() {
   if (composeMediaUploadInFlight) return;
@@ -2865,6 +2877,7 @@ async function handleComposeMediaChange() {
   composeMediaUploadInFlight = true;
   composeMediaBtn.disabled = true;
   composeMediaInput.disabled = true;
+  updateComposeSendState();
   setComposeMediaStatus('Uploading...', false);
   showComposeMediaMessage('Uploading image to nostr.build...', false);
   try {
@@ -2883,6 +2896,7 @@ async function handleComposeMediaChange() {
     composeMediaUploadInFlight = false;
     composeMediaBtn.disabled = false;
     composeMediaInput.disabled = false;
+    updateComposeSendState();
   }
 }
 
@@ -3193,6 +3207,10 @@ function mentionTagsFromContent(text) {
 }
 
 composeSend.addEventListener('click', async () => {
+  if (composeMediaUploadInFlight) {
+    showComposeMediaMessage('Wait for the image upload to finish before posting.', true);
+    return;
+  }
   const raw = composeText.value.trim();
   if (!raw) return;
   // Resolve readable @Name tokens to nostr:nprofile refs so other clients render
@@ -3209,8 +3227,10 @@ composeSend.addEventListener('click', async () => {
     composeSend.textContent = 'Posted!';
     setTimeout(() => { composeSend.textContent = 'Post'; closeCompose(); }, 700);
   } catch (err) {
+    console.error('Compose publish failed:', err);
     composeSend.textContent = 'Failed';
-    setTimeout(() => { composeSend.textContent = 'Post'; composeSend.disabled = false; }, 2000);
+    showComposeMediaMessage(err.message || 'Post failed', true);
+    setTimeout(() => { composeSend.textContent = 'Post'; updateComposeSendState(); }, 2000);
   }
 });
 
