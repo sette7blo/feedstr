@@ -208,17 +208,25 @@ test('composer can upload a device image through nostr.build and insert the retu
   assert.match(source, /function uploadComposeMedia/);
   assert.match(source, /function appendComposeMediaUrl/);
   assert.match(source, /function showComposeMediaMessage/);
-  assert.match(source, /composeMediaUploadInFlight/);
+  assert.match(source, /let composeMediaUploadInFlight = false/);
+  assert.match(source, /function updateComposeSendState\(\)/);
+  assert.match(source, /composeSend\.disabled = composeMediaUploadInFlight \|\| !composeText\.value\.trim\(\)/);
+  assert.match(source, /Wait for the image upload to finish before posting/);
   assert.match(source, /file\.size > 20 \* 1024 \* 1024/);
   assert.match(source, /setTimeout\(\(\) => controller\.abort\(\), 90000\)/);
   assert.match(source, /form\.append\('file'/);
   assert.match(source, /fetch\('\/api\/v1\/media\/upload', \{ method: 'POST', body: form, signal: controller\.signal \}\)/);
   assert.match(source, /appendComposeMediaUrl\(url\)/);
   assert.match(source, /Uploaded: \$\{url\}/);
+  assert.match(source, /Compose publish failed:/);
   assert.match(serverSource, /'Content-Length': Buffer\.byteLength\(body\)/);
-  // Responses keep a fixed Content-Length but no longer force-close the socket,
-  // so HTTP keep-alive stays on for the chatty API.
+  // Only upload responses close the socket (mobile networks stall reusing the
+  // connection after a large upload body); the chatty API keeps keep-alive on.
+  assert.match(serverSource, /res\.setHeader\('Connection', 'close'\)/);
   assert.doesNotMatch(serverSource, /'Connection': 'close'/);
+  assert.match(serverSource, /function postNostrBuildUpload/);
+  assert.match(serverSource, /\[500, 502, 503, 504\]\.includes\(upstream\.status\)/);
+  assert.match(serverSource, /nostr\.build upload transient/);
   assert.match(serverSource, /url\.pathname === '\/api\/v1\/media\/upload'/);
   assert.match(serverSource, /nostrBuildUploadUrl = 'https:\/\/nostr\.build\/api\/v2\/nip96\/upload'/);
   assert.match(serverSource, /readRawBody\(req, 20 \* 1024 \* 1024\)/);
@@ -334,6 +342,10 @@ test('nostr event references render as quote cards instead of raw URLs', async (
   assert.match(source, /state\._embeddedQueue\?\.has\(eventId\)/);
   assert.match(source, /if \(!targetSockets\.length && !pendingHintSockets\.length\)/);
   assert.match(source, /queue\.set\(eventId, hints\)/);
+  // offline embedded-fetch retries back off and stop instead of polling forever
+  assert.match(source, /let _embeddedRetryDelay = 750/);
+  assert.match(source, /if \(_embeddedRetryDelay <= 12000\)/);
+  assert.match(source, /_embeddedRetryDelay \*= 2/);
   assert.match(source, /state\.embeddedEventFetchTried\.add\(eventId\)/);
   assert.match(source, /event:\$\{ref\.eventId\}:\$\{state\.notes\.has\(ref\.eventId\) \? 'resolved' : 'missing'\}/);
   assert.match(source, /contentEl\.innerHTML = formatContent\(event\.content, event\)/);
