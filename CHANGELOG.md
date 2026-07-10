@@ -11,6 +11,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.4.0] — 2026-07-10
+
 - Added a live attachment preview to the composer and reply boxes: quoted notes render as their quote card and uploaded or pasted image links render as the actual picture while writing, exactly as the published note will look.
 - Improved quote-note rendering: Feedstr now remembers relay provenance for seen events, restores cached notes into the global note lookup used by quote cards, marks note rows dirty when embedded quote/event cards move from missing to resolved, refreshes note content during in-place row patches so resolved quote cards actually replace `Looking across relays...`, quotes with `nevent` relay hints when available, opens hinted relay sockets for embedded quote lookups, waits for embedded-note lookup responses across relays instead of stopping on the first `EOSE`, and keeps quote lookups queued until relay sockets are actually open so cached-column hydration does not strand them at `Looking across relays...`.
 - Fixed resolved quote cards crashing the column render (undefined `timeAgo` helper) so quotes stuck on `Looking across relays...` now display once fetched.
@@ -104,7 +106,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/sette7blo/feedstr/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/sette7blo/feedstr/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/sette7blo/feedstr/compare/v0.1.2...v0.2.0
 [v0.1.2]: https://github.com/sette7blo/feedstr/compare/v0.1.1...v0.1.2
