@@ -5,18 +5,55 @@ import { readFile } from 'node:fs/promises';
 const html = new URL('../public/index.html', import.meta.url);
 const styles = new URL('../public/styles.css', import.meta.url);
 const server = new URL('../src/server.js', import.meta.url);
+const manifest = new URL('../public/manifest.webmanifest', import.meta.url);
+const clientScripts = [
+  new URL('../public/app/state.js', import.meta.url),
+  new URL('../public/app/icons.js', import.meta.url),
+  new URL('../public/app/helpers.js', import.meta.url),
+  new URL('../public/app/boot.js', import.meta.url),
+  new URL('../public/app/relays.js', import.meta.url),
+  new URL('../public/app/events.js', import.meta.url),
+  new URL('../public/app/profiles.js', import.meta.url),
+  new URL('../public/app/columns.js', import.meta.url),
+  new URL('../public/app/interactions.js', import.meta.url),
+  new URL('../public/app/compose.js', import.meta.url),
+  new URL('../public/app/modals.js', import.meta.url),
+  new URL('../public/app/init.js', import.meta.url)
+];
+
+async function readClientSource() {
+  const parts = [await readFile(html, 'utf8')];
+  for (const script of clientScripts) parts.push(await readFile(script, 'utf8'));
+  return parts.join('\n');
+}
+
+test('frontend script is split out of index.html into ordered app files', async () => {
+  const source = await readFile(html, 'utf8');
+  assert.doesNotMatch(source, /<script>\s*\/\/ -- state --/);
+  assert.match(source, /<script src="\.\/app\/state\.js\?v=frontend-split-2"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/icons\.js\?v=frontend-split-2"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/helpers\.js\?v=frontend-split-2"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/boot\.js\?v=frontend-split-2"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/columns\.js\?v=profile-pass-4"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/compose\.js\?v=compose-pass-5"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/init\.js\?v=frontend-split-2"><\/script>/);
+  for (const script of clientScripts) {
+    const scriptSource = await readFile(script, 'utf8');
+    assert.ok(scriptSource.length > 0, `${script.pathname} should not be empty`);
+  }
+});
 
 test('mobile form controls stay at the iOS no-zoom font size', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   assert.match(source, /maximum-scale=1/);
-  assert.match(source, /styles\.css\?v=compose-preview-1/);
+  assert.match(source, /styles\.css\?v=drawer-fix-1/);
   assert.match(css, /iOS Safari auto-zooms focused form controls below 16px/);
   assert.match(css, /@media \(hover: none\), \(pointer: coarse\), \(max-width: 900px\) \{[\s\S]*input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="file"\]\),[\s\S]*textarea,[\s\S]*select[\s\S]*font-size: 16px !important;/);
 });
 
 test('sidebar column list can close columns directly on mobile', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   assert.match(source, /className = 'sidebar-column-item'/);
   assert.match(source, /className = 'sidebar-item sidebar-column-jump'/);
@@ -30,14 +67,51 @@ test('sidebar column list can close columns directly on mobile', async () => {
 
 test('mobile drawer stays compact on iOS while preserving close tap targets', async () => {
   const css = await readFile(styles, 'utf8');
-  assert.match(css, /\.sidebar \{[\s\S]*width: min\(56vw, 228px\);/);
-  assert.match(css, /@media \(max-width: 380px\) \{\s*\.sidebar \{ width: min\(58vw, 220px\); \}/);
+  assert.match(css, /Drawer fix 1: iOS side menu should feel compact/);
+  assert.match(css, /\.sidebar \{[\s\S]*width: clamp\(232px, 64vw, 268px\);[\s\S]*max-width: calc\(100vw - 84px\);/);
+  assert.match(css, /@media \(max-width: 390px\) \{[\s\S]*width: clamp\(220px, 62vw, 244px\);[\s\S]*max-width: calc\(100vw - 92px\);/);
   assert.match(css, /\.sidebar-item \{[\s\S]*min-height: 44px;[\s\S]*font-size: 14px;/);
   assert.match(css, /\.sidebar-column-close \{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*margin-right: 6px;/);
 });
 
+test('final visual consistency pass normalizes focus, surfaces, and reduced motion', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /styles\.css\?v=drawer-fix-1/);
+  assert.match(css, /Pass 7: whole-app visual consistency and QA sweep/);
+  assert.match(css, /--radius-sm: 10px/);
+  assert.match(css, /--focus-ring: 0 0 0 3px rgba\(124, 60, 255, 0\.22\)/);
+  assert.match(css, /button:focus-visible,[\s\S]*\[role="button"\]:focus-visible \{[\s\S]*box-shadow: var\(--focus-ring\)/);
+  assert.match(css, /\.column-empty \{[\s\S]*border: 1px dashed rgba\(188, 151, 255, 0\.16\)/);
+  assert.match(css, /\.sidebar-item,[\s\S]*\.connection-chip \{[\s\S]*transition:/);
+  assert.match(css, /\.modal,[\s\S]*\.raw-event-modal \{[\s\S]*border-radius: var\(--radius-xl\)/);
+  assert.match(css, /\.note-media img,[\s\S]*\.reply-preview \.note \{[\s\S]*border-radius: var\(--radius-md\)/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*transition-duration: 0\.001ms !important/);
+});
+
+test('mobile PWA finish protects safe areas, snapping columns, and standalone metadata', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  const manifestBody = JSON.parse(await readFile(manifest, 'utf8'));
+  assert.match(source, /manifest\.webmanifest\?v=mobile-pass-6/);
+  assert.match(source, /name="mobile-web-app-capable" content="yes"/);
+  assert.match(source, /name="color-scheme" content="dark"/);
+  assert.match(source, /format-detection" content="telephone=no"/);
+  assert.equal(manifestBody.id, '/?source=pwa');
+  assert.equal(manifestBody.start_url, '/?source=pwa');
+  assert.deepEqual(manifestBody.display_override, ['window-controls-overlay', 'standalone', 'minimal-ui']);
+  assert.equal(manifestBody.theme_color, '#040208');
+  assert.ok(Array.isArray(manifestBody.shortcuts) && manifestBody.shortcuts.length >= 1);
+  assert.match(css, /Pass 6: mobile\/PWA finish/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*\.columns \{[\s\S]*scroll-snap-type: x mandatory[\s\S]*scrollbar-width: none/);
+  assert.match(css, /\.column \{[\s\S]*scroll-snap-align: start;[\s\S]*scroll-snap-stop: always/);
+  assert.match(css, /\.column-feed \{[\s\S]*padding-bottom: calc\(86px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(css, /\.mobile-menu-button,[\s\S]*\.connection-chip \{[\s\S]*min-width: 44px;[\s\S]*min-height: 44px/);
+  assert.match(css, /@media \(display-mode: standalone\)/);
+});
+
 test('settings entry is a single bottom-left gear chip, not a top-right Idenstr button', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   assert.doesNotMatch(source, /mobile-stack-btn|mobile-stack-button/);
   assert.doesNotMatch(css, /mobile-stack-button/);
@@ -53,14 +127,14 @@ test('settings entry is a single bottom-left gear chip, not a top-right Idenstr 
 });
 
 test('Feedstr signs through Idenstr instead of holding keys or calling admin publish endpoints', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /\/api\/v1\/idenstr\/sign/);
   assert.doesNotMatch(source, /\/api\/v1\/idenstr\/events\/publish/);
   assert.doesNotMatch(source, /IDENSTR_NSEC|FEEDSTR_NSEC|NOSTR_PRIVATE_KEY/);
 });
 
 test('Feedstr exposes Idenstr connection guidance and required scoped token permissions', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   const serverSource = await readFile(server, 'utf8');
   // The server is the single source of truth for the required scope list.
   for (const scope of ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235', 'zaps:write']) {
@@ -81,7 +155,7 @@ test('Feedstr exposes Idenstr connection guidance and required scoped token perm
 });
 
 test('Feedstr exposes a zap action that delegates NIP-57 payment to Idenstr', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   assert.match(source, /data-action="zap"/);
   assert.match(source, /function showZapModal/);
@@ -112,15 +186,17 @@ test('Feedstr exposes a zap action that delegates NIP-57 payment to Idenstr', as
   assert.match(source, /function flashZapButtonForEvent/);
   assert.match(source, /flashZapButtonForEvent\(event\.id\)/);
   assert.match(source, /button\.classList\.add\('zapped'\)/);
-  assert.match(css, /\.note-action\.zapped/);
-  assert.match(css, /@keyframes zap-flash/);
+  assert.match(css, /\.note-action\[data-action="zap"\]\.zapped/);
+  assert.match(css, /@keyframes zap-bolt-flash/);
   assert.match(css, /var\(--bitcoin-gold\)/);
   assert.match(css, /drop-shadow\(0 0 8px rgba\(247, 147, 26, 0\.9\)\)/);
+  assert.match(css, /\.note-action\[data-action="zap"\]:hover,[\s\S]*background: transparent/);
+  assert.match(css, /\.note-action span:empty \{ display: none; \}/);
   assert.match(css, /\.zap-preset\.selected/);
 });
 
 test('Feedstr one-tap zaps a configurable default amount and keeps the modal on long-press', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   // Bolt button: short tap -> quickZap, hold/right-click -> modal.
   assert.match(source, /function attachZapButton/);
@@ -160,7 +236,7 @@ test('Feedstr one-tap zaps a configurable default amount and keeps the modal on 
 });
 
 test('Feedstr combines repost and quote behind one boost action sheet', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   assert.match(source, /data-action="boost"/);
   assert.match(source, /title="Boost or quote"/);
@@ -172,17 +248,76 @@ test('Feedstr combines repost and quote behind one boost action sheet', async ()
   assert.match(source, /await doRepost\(event\)/);
   assert.match(source, /quoteNote\(event\)/);
   assert.match(source, /modal\.classList\.add\('boost-sheet'\)/);
-  assert.match(source, /modal\.classList\.remove\('open', 'boost-sheet', 'raw-event-sheet'\)/);
+  assert.match(source, /modal\.classList\.remove\('open', 'boost-sheet', 'raw-event-sheet', 'note-more-sheet'\)/);
   assert.match(css, /\.boost-modal/);
   assert.match(css, /#add-column-modal\.open\.boost-sheet/);
 });
 
-test('Feedstr exposes a dim raw JSON inspector per note', async () => {
-  const source = await readFile(html, 'utf8');
+test('Feedstr keeps developer note actions behind a calm overflow menu', async () => {
+  const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
-  assert.match(source, /data-action="raw-json"/);
-  assert.match(source, /title="Raw event JSON"/);
-  assert.match(source, /aria-label="View raw event JSON"/);
+  assert.match(source, /data-action="more"/);
+  assert.match(source, /class="note-action note-action-more"/);
+  assert.match(source, /function showNoteMoreMenu\(event\)/);
+  assert.match(source, /data-note-action="mute-thread"/);
+  assert.match(source, /data-note-action="raw-json"/);
+  assert.match(source, /closeModal\(\);\s*muteThread\(event\);/);
+  assert.match(source, /closeModal\(\);\s*showRawEventModal\(event\);/);
+  assert.match(source, /modal\.classList\.add\('note-more-sheet'\)/);
+  assert.match(source, /modal\.classList\.remove\('open', 'boost-sheet', 'raw-event-sheet', 'note-more-sheet'\)/);
+  assert.doesNotMatch(source, /<button class="note-action" data-action="mute-thread"/);
+  assert.doesNotMatch(source, /note-action note-action-raw/);
+  assert.match(css, /\.note-action-more/);
+  assert.match(css, /\.note-more-modal/);
+  assert.match(css, /\.raw-option-icon/);
+});
+
+test('Feedstr note cards have calmer polished spacing and card surfaces', async () => {
+  const css = await readFile(styles, 'utf8');
+  assert.match(css, /\.note \{[\s\S]*padding: 14px 15px 13px;[\s\S]*background: linear-gradient/);
+  assert.match(css, /\.note:hover \{[\s\S]*box-shadow: inset 2px 0 0/);
+  assert.match(css, /\.note-content \{[\s\S]*margin: 8px 0 10px 46px;[\s\S]*line-height: 1\.55/);
+  assert.match(css, /\.note-actions \{[\s\S]*margin-left: 46px;[\s\S]*gap: 8px/);
+  assert.match(css, /\.note-action \{[\s\S]*height: 28px;[\s\S]*border-radius: 999px/);
+  assert.match(css, /\.note-media \{[\s\S]*border-radius: 14px;[\s\S]*box-shadow: 0 10px 24px/);
+  assert.match(css, /\.note-link-card \{[\s\S]*border-radius: 14px;[\s\S]*background: linear-gradient/);
+  assert.match(css, /\.nostr-embed \{[\s\S]*border-radius: 14px;[\s\S]*box-shadow: 0 10px 24px/);
+});
+
+test('profile columns render a full hero with profile metadata and responsive polish', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /function profileHeroHtml\(col\)/);
+  assert.match(source, /function profileUsername\(profile, pubkey\)/);
+  assert.match(source, /function profileInitial\(profile, pubkey\)/);
+  assert.match(source, /function profileBannerUrl\(profile\)/);
+  assert.match(source, /profileHeaderSignature\(pubkey, col\)/);
+  assert.match(source, /class=\"profile-banner\$\{banner \? '' : ' empty'\}\"/);
+  assert.match(source, /class=\"profile-avatar-xl\"/);
+  assert.match(source, /data-profile-action=\"follow\"/);
+  assert.match(source, /data-profile-action=\"mute\"/);
+  assert.match(source, /data-profile-action=\"copy-npub\"/);
+  assert.match(source, /class=\"profile-stats\"/);
+  assert.match(source, /data-profile-note-count/);
+  assert.match(source, /profile-meta-chip nip05/);
+  assert.match(source, /profile-meta-label\">NIP-05/);
+  assert.match(source, /formatCount\(noteCount, 'visible note'\)/);
+  assert.doesNotMatch(source, /data-action=\\"follow-toggle\\" title=/);
+  assert.doesNotMatch(source, /data-action=\\"mute-profile-toggle\\" title=/);
+  assert.match(css, /\.profile-banner::after/);
+  assert.match(css, /\.profile-avatar-xl \{[\s\S]*width: 92px;[\s\S]*height: 92px/);
+  assert.match(css, /\.profile-title-row \{[\s\S]*justify-content: space-between/);
+  assert.match(css, /\.profile-stats \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.profile-meta-label \{[\s\S]*text-transform: uppercase/);
+  assert.match(css, /@media \(max-width: 520px\) \{[\s\S]*\.profile-banner \{ height: 124px; \}[\s\S]*\.profile-stats \{ grid-template-columns: 1fr; \}/);
+});
+
+test('Feedstr exposes a dim raw JSON inspector per note', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /data-note-action="raw-json"/);
+  assert.match(source, /Raw event JSON/);
+  assert.match(source, /showRawEventModal\(event\)/);
   assert.match(source, /function showRawEventModal\(event\)/);
   assert.match(source, /JSON\.stringify\(event, null, 2\)/);
   assert.match(source, /mc\.querySelector\('#raw-json-viewer'\)\.textContent = pretty/);
@@ -191,15 +326,39 @@ test('Feedstr exposes a dim raw JSON inspector per note', async () => {
   assert.match(source, /function copyRawEventText/);
   assert.match(source, /navigator\.clipboard\.writeText\(text\)/);
   assert.match(source, /modal\.classList\.add\('raw-event-sheet'\)/);
-  assert.match(source, /modal\.classList\.remove\('open', 'boost-sheet', 'raw-event-sheet'\)/);
-  assert.match(css, /\.note-action-raw/);
+  assert.match(source, /modal\.classList\.remove\('open', 'boost-sheet', 'raw-event-sheet', 'note-more-sheet'\)/);
+  assert.match(css, /\.note-action-more/);
   assert.match(css, /margin-left: auto/);
   assert.match(css, /\.raw-json-viewer/);
   assert.match(css, /\.modal\.raw-event-modal/);
 });
 
+test('composer and inline replies have identity context, counters, and polished sheet controls', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /id="compose-identity"/);
+  assert.match(source, /Posting as/);
+  assert.match(source, /id="compose-count">0/);
+  assert.match(source, /function renderComposeIdentity\(\)/);
+  assert.match(source, /renderAvatar\(profile, pubkey, 'compose-identity-avatar'\)/);
+  assert.match(source, /composeCount\.textContent = `\$\{length\}`/);
+  assert.match(source, /composeCount\.classList\.toggle\('active', length > 0\)/);
+  assert.match(source, /class="reply-box-head"/);
+  assert.match(source, /Replying to/);
+  assert.match(source, /class="reply-close-btn"/);
+  assert.match(source, /class="reply-helper-row"/);
+  assert.match(source, /class="reply-count">0/);
+  assert.match(source, /sendBtn\.disabled = mediaUploadInFlight \|\| !length/);
+  assert.match(css, /\.compose-identity \{[\s\S]*grid-template-columns: 42px minmax\(0, 1fr\)/);
+  assert.match(css, /\.compose-helper-row,[\s\S]*\.reply-helper-row \{/);
+  assert.match(css, /\.compose-actions \{[\s\S]*position: sticky;[\s\S]*bottom: 0/);
+  assert.match(css, /\.reply-box \{[\s\S]*border-radius: 18px;[\s\S]*box-shadow:/);
+  assert.match(css, /\.reply-target-avatar\.note-avatar \{[\s\S]*width: 34px;[\s\S]*height: 34px/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*\.compose-identity \{ margin: 12px 16px 10px; \}[\s\S]*\.reply-box \{ margin: 0 8px 12px 8px; border-radius: 16px; \}/);
+});
+
 test('composer can upload a device image through nostr.build and insert the returned URL', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   const serverSource = await readFile(server, 'utf8');
   assert.match(source, /id="compose-media-input" type="file" accept="image\/\*" hidden/);
   assert.match(source, /id="compose-media-btn"/);
@@ -210,7 +369,7 @@ test('composer can upload a device image through nostr.build and insert the retu
   assert.match(source, /function showComposeMediaMessage/);
   assert.match(source, /let composeMediaUploadInFlight = false/);
   assert.match(source, /function updateComposeSendState\(\)/);
-  assert.match(source, /composeSend\.disabled = composeMediaUploadInFlight \|\| !composeText\.value\.trim\(\)/);
+  assert.match(source, /const length = composeText\.value\.trim\(\)\.length;[\s\S]*composeSend\.disabled = composeMediaUploadInFlight \|\| !length/);
   assert.match(source, /Wait for the image upload to finish before posting/);
   assert.match(source, /file\.size > 20 \* 1024 \* 1024/);
   assert.match(source, /setTimeout\(\(\) => controller\.abort\(\), 90000\)/);
@@ -240,7 +399,7 @@ test('composer can upload a device image through nostr.build and insert the retu
 });
 
 test('mentions and notifications refresh author profiles when avatars are missing', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /function profileDisplayChanged/);
   assert.match(source, /if \(changed\) \{/);
   assert.match(source, /rerenderColumnsForAuthor\(event\.pubkey\)/);
@@ -255,8 +414,30 @@ test('mentions and notifications refresh author profiles when avatars are missin
   assert.doesNotMatch(source, /filters\.push\(\{ kinds: \[0\], limit: 50 \}\)/);
 });
 
+test('Feedstr column headers expose live status, type, and dynamic counts', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /function columnHeaderStats\(col\)/);
+  assert.match(source, /function columnKindLabel\(col\)/);
+  assert.match(source, /function updateColumnHeaderMeta\(col\)/);
+  assert.match(source, /function updateAllColumnHeaderMeta\(\)/);
+  assert.match(source, /data-column-kind-label/);
+  assert.match(source, /data-column-subtitle/);
+  assert.match(source, /column-status-dot \$\{stats\.statusClass\}/);
+  assert.match(source, /openRelayCount\(\)/);
+  assert.match(source, /formatCount\(state\.following\.length, 'follow'\)/);
+  assert.match(source, /formatCount\(events, 'notification'\)/);
+  assert.match(source, /updateColumnHeaderMeta\(col\);/);
+  assert.match(source, /Back to \$\{esc\(col\.name\)\}/);
+  assert.match(css, /\.column-header \{[\s\S]*height: 72px;[\s\S]*box-shadow:/);
+  assert.match(css, /\.column-kicker \{[\s\S]*text-transform: uppercase/);
+  assert.match(css, /\.column-status-dot\.live \{[\s\S]*var\(--success-green\)/);
+  assert.match(css, /\.column-status-dot\.connecting \{[\s\S]*var\(--bitcoin-gold\)/);
+  assert.match(css, /\.column-btn \{[\s\S]*width: 31px;[\s\S]*border-radius: 10px/);
+});
+
 test('notifications are the canonical mentions surface with typed filters', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /type: 'notifications', name: 'Notifications', notificationFilter: 'all'/);
   assert.doesNotMatch(source, /data-type="mentions"/);
   for (const label of ['All', 'Replies', 'Mentions', 'Zaps', 'Reposts', 'Reactions']) {
@@ -271,25 +452,55 @@ test('notifications are the canonical mentions surface with typed filters', asyn
   assert.match(source, /aria-label', `\$\{label\} \$\{counts\[key\]/);
 });
 
+test('notifications group repeated reactions, reposts, and zaps without changing counts', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /function groupNotifications\(notifications\)/);
+  assert.match(source, /\['reaction', 'repost', 'zap'\]\.includes\(n\.type\) && n\.targetEventId/);
+  assert.match(source, /id: `group:\$\{key\}`/);
+  assert.match(source, /const rows = groupNotifications\(visible\)/);
+  assert.match(source, /keyOf: n => n\.id/);
+  assert.match(source, /sigOf: n => notificationProfileSignature\(n\)/);
+  assert.match(source, /notification\.grouped \? `reacted \$\{count\} times` : 'reacted'/);
+  assert.match(source, /notification\.grouped \? `reposted your note \$\{count\} times` : 'reposted your note'/);
+  assert.match(source, /zapped your note \$\{count\} times/);
+  assert.match(source, /notification\.grouped \? notification\.totalSats : notification\.amountSats/);
+  assert.match(css, /\.notification-row\.grouped/);
+});
+
+test('notification avatars keep their own grid width on mobile', async () => {
+  const css = await readFile(styles, 'utf8');
+  assert.match(css, /\.notification-row \{[\s\S]*grid-template-columns: 28px 46px minmax\(0, 1fr\) auto/);
+  assert.match(css, /\.notification-avatar\.note-avatar \{[\s\S]*width: 42px;[\s\S]*height: 42px/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*\.note-avatar \{ width: 44px; height: 44px; \}[\s\S]*\.notification-avatar\.note-avatar \{ width: 42px; height: 42px; \}/);
+});
+
 test('notifications fan out to all relays so non-followed actors do not disappear', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /function subscribe\(subId, filters, columnId, options = \{\}\)/);
   assert.match(source, /allRelays: Boolean\(options\.allRelays\)/);
   assert.match(source, /sub\.allRelays \? sockets\.length : Math\.min\(3, sockets\.length\)/);
   assert.match(source, /col\.type === 'notifications' \|\| col\.type === 'mentions'/);
   assert.match(source, /allRelays: true/);
+  assert.match(source, /typeof updateAllColumnHeaderMeta === 'function'\) updateAllColumnHeaderMeta\(\)/);
 });
 
 test('mutes come from Idenstr and filter notifications before counts/rendering', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /api\('\/api\/v1\/idenstr\/mutes'\)/);
   assert.match(source, /function refreshMuteSets/);
   assert.match(source, /function isMutedNotification/);
   assert.match(source, /\.filter\(n => !isMutedNotification\(n\)\)/);
-  assert.match(source, /data-action="mute-thread"/);
+  assert.match(source, /data-action="more"/);
+  assert.match(source, /aria-label="More note actions"/);
+  assert.match(source, /function showNoteMoreMenu\(event\)/);
+  assert.match(source, /data-note-action="mute-thread"/);
+  assert.match(source, /data-note-action="raw-json"/);
+  assert.match(source, /showNoteMoreMenu\(event\)/);
   assert.match(source, /iconSvg\('volume-x'\)/);
+  assert.doesNotMatch(source, /<button class="note-action" data-action="mute-thread"/);
   assert.doesNotMatch(source, /data-action="mute-thread" title="Mute thread">\$\{iconSvg\('bell'\)\}/);
-  assert.match(source, /data-action="mute-profile-toggle"/);
+  assert.match(source, /data-profile-action="mute"/);
   assert.match(source, /function toggleMuteProfile/);
   assert.match(source, /function muteProfile/);
   assert.match(source, /function isMutedProfile/);
@@ -304,7 +515,7 @@ test('mutes come from Idenstr and filter notifications before counts/rendering',
 });
 
 test('note content renders inline image previews and link cards', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /function extractUrls/);
   assert.match(source, /function isImageUrl/);
   assert.match(source, /function renderImagePreview/);
@@ -318,7 +529,7 @@ test('note content renders inline image previews and link cards', async () => {
 });
 
 test('nostr event references render as quote cards instead of raw URLs', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /function extractNostrEventRefs/);
   assert.match(source, /function extractNostrRefs/);
   assert.match(source, /function parseNostrEventRef/);
@@ -371,7 +582,7 @@ test('nostr event references render as quote cards instead of raw URLs', async (
 });
 
 test('composer and reply boxes live-preview quoted notes and attached images', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /function attachComposePreview/);
   assert.match(source, /id="compose-preview"/);
   assert.match(source, /class="reply-preview compose-preview hidden"/);
@@ -387,7 +598,7 @@ test('composer and reply boxes live-preview quoted notes and attached images', a
 });
 
 test('normal feeds fetch and render deeper timelines instead of stopping early', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /const since = now - 86400 \* 7; \/\/ last 7 days for scrollable timelines/);
   assert.match(source, /\.slice\(0, 500\)/);
   assert.match(source, /authors: followPubkeys, since, limit: 500/);
@@ -398,7 +609,7 @@ test('normal feeds fetch and render deeper timelines instead of stopping early',
 });
 
 test('reply boxes support image uploads like the main composer', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /class="reply-media-input compose-media-input" type="file" accept="image\/\*" hidden/);
   assert.match(source, /class="btn btn-ghost btn-sm compose-media-btn reply-media-btn"/);
   assert.match(source, /class="reply-media-status compose-media-status hidden"/);
@@ -413,7 +624,7 @@ test('reply boxes support image uploads like the main composer', async () => {
 });
 
 test('reply draft boxes survive feed reconciliation while typing', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /const replyBoxes = new Map\(\)/);
   assert.match(source, /node\.classList\?\.contains\('reply-box'\) && node\.dataset\?\.replyFor/);
   assert.match(source, /if \(keep\.has\(node\.dataset\.replyFor\)\) replyBoxes\.set\(node\.dataset\.replyFor, node\)/);
@@ -424,7 +635,7 @@ test('reply draft boxes survive feed reconciliation while typing', async () => {
 });
 
 test('reply boxes hide the mobile compose FAB only while the reply UI is active', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   assert.match(source, /function setInlineReplyActive/);
   assert.match(source, /document\.body\.classList\.toggle\('inline-reply-active'/);
@@ -440,7 +651,7 @@ test('reply boxes hide the mobile compose FAB only while the reply UI is active'
 });
 
 test('reply notes show a quiet inline cue and open the conversation in-column', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /function renderReplyContext/);
   assert.match(source, /function getReplyParentRef/);
   assert.match(source, /const replyContext = opts\.thread \? '' : renderReplyContext\(event\)/);
@@ -466,7 +677,7 @@ test('reply notes show a quiet inline cue and open the conversation in-column', 
 });
 
 test('feeds reconcile in place so avatars do not strobe as relays stream events', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   // A shared keyed reconciler reuses painted rows instead of wiping innerHTML.
   assert.match(source, /function reconcileChildren/);
   assert.match(source, /function noteProfileSignature/);
@@ -479,7 +690,7 @@ test('feeds reconcile in place so avatars do not strobe as relays stream events'
   assert.match(source, /requestAnimationFrame/);
   // All three surfaces go through the reconciler.
   assert.match(source, /reconcileChildren\(feedEl, events,/);
-  assert.match(source, /reconcileChildren\(feedEl, visible,/);
+  assert.match(source, /reconcileChildren\(feedEl, rows,/);
   assert.match(source, /reconcileChildren\(chainEl, chain,/);
   assert.match(source, /reconcileChildren\(repliesEl, replies,/);
   // When a row's profile loads it is patched in place, not rebuilt, so the
@@ -493,7 +704,7 @@ test('feeds reconcile in place so avatars do not strobe as relays stream events'
 });
 
 test('nostr profile tags render as people and composer can tag follows', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /function expandIndexedNostrReferences/);
   assert.ok(source.includes('replace(/#\\[(\\d+)\\]/g'));
   assert.match(source, /tag\[0\] === 'p'/);
@@ -519,7 +730,7 @@ test('nostr profile tags render as people and composer can tag follows', async (
 });
 
 test('zap notifications resolve human zapper and amount before rendering', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /function getZapSenderPubkey/);
   assert.match(source, /firstTagValue\(event, 'P'\)/);
   assert.match(source, /JSON\.parse\(description\)/);
@@ -531,7 +742,7 @@ test('zap notifications resolve human zapper and amount before rendering', async
 });
 
 test('broken avatar images retry profile lookups instead of staying as placeholders', async () => {
-  const source = await readFile(html, 'utf8');
+  const source = await readClientSource();
   assert.match(source, /function renderAvatar/);
   assert.match(source, /data-pubkey="\$\{esc\(pubkey\)\}"/);
   assert.match(source, /onerror="handleAvatarImageError\(this\)"/);
