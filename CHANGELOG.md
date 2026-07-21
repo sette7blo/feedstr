@@ -11,6 +11,19 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.5.0] — 2026-07-21
+
+- Split the large inline browser script out of `public/index.html` into ordered plain JavaScript files under `public/app/`, keeping the no-build-step deployment while making future UI and behavior changes safer to test.
+- Polished note cards and note actions: calmer card spacing/surfaces, cleaner action rows, Boost/Repost/Quote sheet integration, and moved developer-oriented note actions such as mute-thread/raw JSON behind the overflow menu.
+- Polished column headers with clearer type/status metadata, live count/subtitle text, and safer refresh/close/profile action placement.
+- Polished Notifications with grouped repeated reactions/reposts/zaps, raw filter counts preserved, compact rows, and fixed mobile avatar alignment/recovery behavior.
+- Added full profile-column hero polish with banner/avatar/name/handle/copy nprofile, relationship/zap status, bio, metadata chips, Follow/Mute actions, and a notes count label above the profile timeline.
+- Polished the main composer and inline reply boxes with posting identity context, helper/count rows, attachment/quote previews, sticky actions, reply target headers, and mobile/iOS-safe sheet sizing.
+- Finished the mobile/PWA shell with safe-area-aware top chrome, smoother full-width column snapping, hidden mobile scrollbars, 44px touch-target coverage, refined drawer/backdrop/FAB/sheet spacing, standalone-mode CSS, and richer PWA manifest metadata.
+- Added a final whole-app visual consistency pass: shared radius/focus/surface/shadow tokens, unified focus-visible and transition behavior, calmer empty/loading states, normalized modal/card/media/embed/toast treatment, tabular counts, and reduced-motion support.
+- Narrowed the iOS/mobile side drawer after real-use feedback so it feels like a compact side menu instead of a half-screen panel while preserving large column-close and navigation tap targets.
+- Expanded regression coverage for the frontend split and every polish pass; the suite now checks mobile/PWA metadata, drawer sizing, profile heroes, grouped notifications, composer/reply polish, final visual consistency, and existing signing/zap/media behavior.
+
 ## [v0.4.0] — 2026-07-10
 
 - Added a live attachment preview to the composer and reply boxes: quoted notes render as their quote card and uploaded or pasted image links render as the actual picture while writing, exactly as the published note will look.
@@ -106,7 +119,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/sette7blo/feedstr/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/sette7blo/feedstr/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/sette7blo/feedstr/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/sette7blo/feedstr/compare/v0.1.2...v0.2.0
