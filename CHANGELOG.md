@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Split the two largest frontend files into focused modules: `columns.js` is now columns, column feed, notifications, notes, and threads; `modals.js` is now overlays, add-column, follow, column store, mutes, and counts/cache. Behavior is unchanged — the files load in the same order — but each concern can be read and changed on its own.
+- Added `MODULES.md`, a map of which file owns what, and a header to `styles.css` pointing at its section index.
+- Made the frontend test suite derive its module list and cache-busters from `index.html` instead of hardcoding them, so splitting a module or bumping a `?v=` no longer requires editing tests. Added a check that script tags and `public/app` match exactly, catching orphaned or unreferenced modules.
+
 ## [v0.6.0] — 2026-07-24
 
 - Added timeline quality filters to columns: Notes, Replies, All, and Media modes with per-column persistence, dynamic counts, reply counts on visible notes, profile-column Notes/Replies/All/Media tabs, filtered empty states, and click-the-card conversation opening.

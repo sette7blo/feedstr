@@ -1,55 +1,70 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
 const html = new URL('../public/index.html', import.meta.url);
 const styles = new URL('../public/styles.css', import.meta.url);
 const server = new URL('../src/server.js', import.meta.url);
 const manifest = new URL('../public/manifest.webmanifest', import.meta.url);
-const clientScripts = [
-  new URL('../public/app/state.js', import.meta.url),
-  new URL('../public/app/icons.js', import.meta.url),
-  new URL('../public/app/helpers.js', import.meta.url),
-  new URL('../public/app/boot.js', import.meta.url),
-  new URL('../public/app/relays.js', import.meta.url),
-  new URL('../public/app/events.js', import.meta.url),
-  new URL('../public/app/profiles.js', import.meta.url),
-  new URL('../public/app/columns.js', import.meta.url),
-  new URL('../public/app/interactions.js', import.meta.url),
-  new URL('../public/app/compose.js', import.meta.url),
-  new URL('../public/app/modals.js', import.meta.url),
-  new URL('../public/app/init.js', import.meta.url)
-];
+const appDir = new URL('../public/app/', import.meta.url);
+
+// The module list is derived from index.html rather than hardcoded, so splitting a
+// module or bumping a ?v= cache-buster does not require editing this file.
+async function scriptTags() {
+  const source = await readFile(html, 'utf8');
+  return [...source.matchAll(/<script src="\.\/app\/([a-z0-9-]+\.js)\?v=([^"]+)"><\/script>/g)]
+    .map(([, file, version]) => ({ file, version }));
+}
+
+async function clientScriptUrls() {
+  return (await scriptTags()).map(({ file }) => new URL(file, appDir));
+}
 
 async function readClientSource() {
   const parts = [await readFile(html, 'utf8')];
-  for (const script of clientScripts) parts.push(await readFile(script, 'utf8'));
+  for (const script of await clientScriptUrls()) parts.push(await readFile(script, 'utf8'));
   return parts.join('\n');
 }
 
 test('frontend script is split out of index.html into ordered app files', async () => {
   const source = await readFile(html, 'utf8');
   assert.doesNotMatch(source, /<script>\s*\/\/ -- state --/);
-  assert.match(source, /<script src="\.\/app\/state\.js\?v=frontend-split-2"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/icons\.js\?v=frontend-split-2"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/helpers\.js\?v=media-pass-9"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/boot\.js\?v=frontend-split-2"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/relays\.js\?v=following-perf-5"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/columns\.js\?v=notes-thread-1"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/compose\.js\?v=compose-pass-5"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/modals\.js\?v=notes-thread-1"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/init\.js\?v=frontend-split-2"><\/script>/);
-  for (const script of clientScripts) {
+
+  const tags = await scriptTags();
+  assert.ok(tags.length >= 12, 'index.html should load the app as separate module files');
+
+  // state.js must run first and init.js last; everything else is order-tolerant.
+  assert.equal(tags[0].file, 'state.js');
+  assert.equal(tags[tags.length - 1].file, 'init.js');
+
+  // Every module is referenced exactly once, and every file on disk is referenced:
+  // an orphaned module is dead code, a missing one is a runtime break.
+  const referenced = tags.map(({ file }) => file);
+  assert.equal(new Set(referenced).size, referenced.length, 'no module referenced twice');
+  const onDisk = (await readdir(appDir)).filter((name) => name.endsWith('.js')).sort();
+  assert.deepEqual([...referenced].sort(), onDisk, 'script tags must match public/app exactly');
+
+  // Assets are immutable-cached, so every tag needs a cache-buster.
+  for (const { file, version } of tags) {
+    assert.ok(version.length > 0, `${file} needs a ?v= cache-buster`);
+  }
+
+  for (const script of await clientScriptUrls()) {
     const scriptSource = await readFile(script, 'utf8');
     assert.ok(scriptSource.length > 0, `${script.pathname} should not be empty`);
   }
+});
+
+test('stylesheet and manifest are cache-busted', async () => {
+  const source = await readFile(html, 'utf8');
+  assert.match(source, /styles\.css\?v=[^"]+/);
+  assert.match(source, /manifest\.webmanifest\?v=[^"]+/);
 });
 
 test('mobile form controls stay at the iOS no-zoom font size', async () => {
   const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   assert.match(source, /maximum-scale=1/);
-  assert.match(source, /styles\.css\?v=following-perf-5/);
   assert.match(css, /iOS Safari auto-zooms focused form controls below 16px/);
   assert.match(css, /@media \(hover: none\), \(pointer: coarse\), \(max-width: 900px\) \{[\s\S]*input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="file"\]\),[\s\S]*textarea,[\s\S]*select[\s\S]*font-size: 16px !important;/);
 });
@@ -79,7 +94,6 @@ test('mobile drawer stays compact on iOS while preserving close tap targets', as
 test('final visual consistency pass normalizes focus, surfaces, and reduced motion', async () => {
   const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
-  assert.match(source, /styles\.css\?v=following-perf-5/);
   assert.match(css, /Pass 7: whole-app visual consistency and QA sweep/);
   assert.match(css, /--radius-sm: 10px/);
   assert.match(css, /--focus-ring: 0 0 0 3px rgba\(124, 60, 255, 0\.22\)/);
@@ -95,7 +109,6 @@ test('mobile PWA finish protects safe areas, snapping columns, and standalone me
   const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   const manifestBody = JSON.parse(await readFile(manifest, 'utf8'));
-  assert.match(source, /manifest\.webmanifest\?v=mobile-pass-6/);
   assert.match(source, /name="mobile-web-app-capable" content="yes"/);
   assert.match(source, /name="color-scheme" content="dark"/);
   assert.match(source, /format-detection" content="telephone=no"/);
@@ -538,9 +551,6 @@ test('note content renders inline image previews and link cards', async () => {
 test('Pass 9 opens note media in an in-app lightbox viewer', async () => {
   const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
-  assert.match(source, /helpers\.js\?v=media-pass-9/);
-  assert.match(source, /modals\.js\?v=notes-thread-1/);
-  assert.match(source, /styles\.css\?v=following-perf-5/);
   assert.match(source, /data-media-url="\$\{esc\(url\)\}"/);
   assert.match(source, /aria-label="Open image viewer"/);
   assert.match(source, /document\.addEventListener\('click', \(e\) => \{[\s\S]*a\.note-media\[data-media-url\]/);
@@ -661,8 +671,6 @@ test('normal feeds fetch and render deeper timelines instead of stopping early',
 test('Pass 8 adds timeline quality filters for top-level, replies, all, and media', async () => {
   const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
-  assert.match(source, /styles\.css\?v=following-perf-5/);
-  assert.match(source, /columns\.js\?v=notes-thread-1/);
   assert.match(source, /const FEED_MODES = \['top', 'replies', 'all', 'media'\]/);
   assert.match(source, /if \(FEED_MODES\.includes\(col\?\.feedMode\)\) return col\.feedMode/);
   assert.match(source, /return col\?\.type === 'following' \? 'all' : 'top'/);

@@ -1,3 +1,15 @@
+/* Feedstr stylesheet — ~3280 lines. Do not read it whole.
+   Every section starts with a comment in column 1, so the live index is:
+
+     grep -n "^/\*" public/styles.css
+
+   Then read only that range. Rough regions (line numbers drift, the grep does not):
+     tokens/reset 1-40 | sidebar + brand + status chip 40-300 | compose modal 300-620
+     columns, note cards, threads, follow ring 620-1050 | image lightbox 1050-1330
+     profile header 1330-1590 | notifications 1590-1730 | inline reply 1730-1810
+     buttons, modals, toasts, inputs 1810-2100 | panels + connection UI 2100-2560
+     iOS/mobile layout + drawer 2560-2950 | visual consistency sweep 2950-end */
+
 :root {
   --void: #040208;
   --panel: rgba(18, 12, 31, 0.82);
