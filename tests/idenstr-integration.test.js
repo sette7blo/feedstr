@@ -32,10 +32,12 @@ test('frontend script is split out of index.html into ordered app files', async 
   assert.doesNotMatch(source, /<script>\s*\/\/ -- state --/);
   assert.match(source, /<script src="\.\/app\/state\.js\?v=frontend-split-2"><\/script>/);
   assert.match(source, /<script src="\.\/app\/icons\.js\?v=frontend-split-2"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/helpers\.js\?v=frontend-split-2"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/helpers\.js\?v=media-pass-9"><\/script>/);
   assert.match(source, /<script src="\.\/app\/boot\.js\?v=frontend-split-2"><\/script>/);
-  assert.match(source, /<script src="\.\/app\/columns\.js\?v=profile-pass-4"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/relays\.js\?v=following-perf-5"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/columns\.js\?v=notes-thread-1"><\/script>/);
   assert.match(source, /<script src="\.\/app\/compose\.js\?v=compose-pass-5"><\/script>/);
+  assert.match(source, /<script src="\.\/app\/modals\.js\?v=notes-thread-1"><\/script>/);
   assert.match(source, /<script src="\.\/app\/init\.js\?v=frontend-split-2"><\/script>/);
   for (const script of clientScripts) {
     const scriptSource = await readFile(script, 'utf8');
@@ -47,7 +49,7 @@ test('mobile form controls stay at the iOS no-zoom font size', async () => {
   const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   assert.match(source, /maximum-scale=1/);
-  assert.match(source, /styles\.css\?v=drawer-fix-1/);
+  assert.match(source, /styles\.css\?v=following-perf-5/);
   assert.match(css, /iOS Safari auto-zooms focused form controls below 16px/);
   assert.match(css, /@media \(hover: none\), \(pointer: coarse\), \(max-width: 900px\) \{[\s\S]*input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="file"\]\),[\s\S]*textarea,[\s\S]*select[\s\S]*font-size: 16px !important;/);
 });
@@ -77,7 +79,7 @@ test('mobile drawer stays compact on iOS while preserving close tap targets', as
 test('final visual consistency pass normalizes focus, surfaces, and reduced motion', async () => {
   const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
-  assert.match(source, /styles\.css\?v=drawer-fix-1/);
+  assert.match(source, /styles\.css\?v=following-perf-5/);
   assert.match(css, /Pass 7: whole-app visual consistency and QA sweep/);
   assert.match(css, /--radius-sm: 10px/);
   assert.match(css, /--focus-ring: 0 0 0 3px rgba\(124, 60, 255, 0\.22\)/);
@@ -475,13 +477,18 @@ test('notification avatars keep their own grid width on mobile', async () => {
   assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*\.note-avatar \{ width: 44px; height: 44px; \}[\s\S]*\.notification-avatar\.note-avatar \{ width: 42px; height: 42px; \}/);
 });
 
-test('notifications fan out to all relays so non-followed actors do not disappear', async () => {
+test('notifications fan out while following feeds shard filters across relays', async () => {
   const source = await readClientSource();
   assert.match(source, /function subscribe\(subId, filters, columnId, options = \{\}\)/);
   assert.match(source, /allRelays: Boolean\(options\.allRelays\)/);
-  assert.match(source, /sub\.allRelays \? sockets\.length : Math\.min\(3, sockets\.length\)/);
+  assert.match(source, /shardFilters: Boolean\(options\.shardFilters\)/);
+  assert.match(source, /function sendSubToSockets\(subId, sub, socketEntries\)/);
+  assert.match(source, /if \(sub\.shardFilters\) \{/);
+  assert.match(source, /const key = relaySendKey\(url, i\)/);
+  assert.match(source, /sub\.allRelays \? socketEntries\.length : Math\.min\(3, socketEntries\.length\)/);
+  assert.match(source, /options\.shardFilters = true/);
+  assert.match(source, /options\.relayReplicas = 2/);
   assert.match(source, /col\.type === 'notifications' \|\| col\.type === 'mentions'/);
-  assert.match(source, /allRelays: true/);
   assert.match(source, /typeof updateAllColumnHeaderMeta === 'function'\) updateAllColumnHeaderMeta\(\)/);
 });
 
@@ -528,6 +535,49 @@ test('note content renders inline image previews and link cards', async () => {
   assert.match(source, /rel="noopener noreferrer"/);
 });
 
+test('Pass 9 opens note media in an in-app lightbox viewer', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /helpers\.js\?v=media-pass-9/);
+  assert.match(source, /modals\.js\?v=notes-thread-1/);
+  assert.match(source, /styles\.css\?v=following-perf-5/);
+  assert.match(source, /data-media-url="\$\{esc\(url\)\}"/);
+  assert.match(source, /aria-label="Open image viewer"/);
+  assert.match(source, /document\.addEventListener\('click', \(e\) => \{[\s\S]*a\.note-media\[data-media-url\]/);
+  assert.match(source, /e\.stopPropagation\(\)/);
+  assert.match(source, /e\.stopImmediatePropagation\?\.\(\)/);
+  assert.match(source, /\}, true\);/);
+  assert.match(source, /const previewSrc = \(box\._previewSrc && next === box\._previewIndex\)/);
+  assert.match(source, /img\.onerror = \(\) => \{[\s\S]*img\.src = previewSrc/);
+  assert.match(source, /img\.classList\.add\('loaded', 'failed'\)/);
+  assert.match(source, /img\.removeAttribute\('src'\)/);
+  assert.match(source, /function mediaGroupForLink\(link\)/);
+  assert.match(source, /function ensureMediaLightbox\(\)/);
+  assert.match(source, /id = 'media-lightbox'/);
+  assert.match(source, /role', 'dialog'/);
+  assert.match(source, /aria-modal', 'true'/);
+  assert.match(source, /Open original/);
+  assert.match(source, /function openMediaLightbox\(link\)/);
+  assert.match(source, /function closeMediaLightbox\(\)/);
+  assert.match(source, /function showLightboxImage\(index\)/);
+  assert.match(source, /data-media-action="prev"/);
+  assert.match(source, /data-media-action="next"/);
+  assert.match(source, /ArrowLeft/);
+  assert.match(source, /ArrowRight/);
+  assert.match(source, /Escape/);
+  assert.match(css, /\.media-lightbox \{[\s\S]*position: fixed;[\s\S]*inset: 0;[\s\S]*z-index: 250/);
+  assert.match(css, /\.media-lightbox\.open \{ display: flex; \}/);
+  assert.match(css, /The overlay is the ONLY full-size element/);
+  assert.match(css, /WITHOUT vh\/dvh units/);
+  assert.doesNotMatch(css, /\.media-lightbox-backdrop/);
+  assert.doesNotMatch(css, /\.media-lightbox-shell/);
+  assert.doesNotMatch(css, /\.media-lightbox-figure/);
+  assert.match(css, /\.media-lightbox-img \{[\s\S]*max-width: 100%;[\s\S]*max-height: 100%;[\s\S]*width: auto;[\s\S]*height: auto/);
+  assert.match(css, /\.media-lightbox-img\.failed \{ display: none; \}/);
+  assert.match(css, /\.media-lightbox-bar \{[\s\S]*position: absolute;[\s\S]*top: 0/);
+  assert.match(css, /\.media-lightbox-nav \{[\s\S]*position: absolute;[\s\S]*top: 50%/);
+});
+
 test('nostr event references render as quote cards instead of raw URLs', async () => {
   const source = await readClientSource();
   assert.match(source, /function extractNostrEventRefs/);
@@ -561,7 +611,7 @@ test('nostr event references render as quote cards instead of raw URLs', async (
   assert.match(source, /event:\$\{ref\.eventId\}:\$\{state\.notes\.has\(ref\.eventId\) \? 'resolved' : 'missing'\}/);
   assert.match(source, /contentEl\.innerHTML = formatContent\(event\.content, event\)/);
   assert.match(source, /const wasMissing = !state\.notes\.has\(event\.id\)/);
-  assert.match(source, /if \(wasMissing\) scheduleRerenderAllColumns\(\)/);
+  assert.match(source, /if \(wasMissing && backfillSub\?\.oneshot\) scheduleRerenderAllColumns\(\)/);
   assert.match(source, /let globalNoteAdded = false/);
   assert.match(source, /if \(!state\.notes\.has\(event\.id\)\) globalNoteAdded = true/);
   assert.match(source, /if \(globalNoteAdded\) scheduleRerenderAllColumns\(\)/);
@@ -601,11 +651,47 @@ test('normal feeds fetch and render deeper timelines instead of stopping early',
   const source = await readClientSource();
   assert.match(source, /const since = now - 86400 \* 7; \/\/ last 7 days for scrollable timelines/);
   assert.match(source, /\.slice\(0, 500\)/);
-  assert.match(source, /authors: followPubkeys, since, limit: 500/);
+  assert.match(source, /chunkArray\(followPubkeys, 100\)\.map\(authors => \(\{ kinds: \[1\], authors, since, limit: 120 \}\)\)/);
   assert.match(source, /'#p': \[state\.identity\.pubkey\], since, limit: 500/);
   assert.match(source, /'#t': \[col\.tag\.toLowerCase\(\)\], since, limit: 500/);
   assert.match(source, /authors: \[col\.pubkey\], since: now - 86400 \* 30, limit: 500/);
   assert.match(source, /authors: col\.pubkeys, since, limit: 500/);
+});
+
+test('Pass 8 adds timeline quality filters for top-level, replies, all, and media', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  assert.match(source, /styles\.css\?v=following-perf-5/);
+  assert.match(source, /columns\.js\?v=notes-thread-1/);
+  assert.match(source, /const FEED_MODES = \['top', 'replies', 'all', 'media'\]/);
+  assert.match(source, /if \(FEED_MODES\.includes\(col\?\.feedMode\)\) return col\.feedMode/);
+  assert.match(source, /return col\?\.type === 'following' \? 'all' : 'top'/);
+  assert.match(source, /function ensureFeedModeBar\(feedEl, col, after = null\)/);
+  assert.match(source, /if \(mode === 'top'\) return 'Notes'/);
+  assert.match(source, /role="tab" aria-selected="\$\{mode === key\}" data-feed-mode="\$\{key\}"/);
+  assert.match(source, /function isReplyEvent\(event\)/);
+  assert.match(source, /getReplyParentRef\(event\)/);
+  assert.match(source, /function isMediaEvent\(event\)/);
+  assert.match(source, /extractUrls\(event\?\.content \?\? ''\)\.some\(isImageUrl\)/);
+  assert.match(source, /function filterEventsForMode\(events, mode\)/);
+  assert.match(source, /mode === 'replies'\) return events\.filter\(isReplyEvent\)/);
+  assert.match(source, /mode === 'media'\) return events\.filter\(isMediaEvent\)/);
+  assert.match(source, /return events\.filter\(e => !isReplyEvent\(e\)\)/);
+  assert.match(source, /if \(isFeedModeColumn\(col\)\) return filterEventsForMode\(baseFeedEvents\(col\), feedModeForColumn\(col\)\)\.length/);
+  assert.match(source, /if \(c\.feedMode\) out\.feedMode = c\.feedMode/);
+  assert.match(source, /col\.feedMode = nextMode;\s*saveColumns\(\);\s*renderColumnFeed\(col\);/);
+  assert.match(source, /const modeBar = ensureFeedModeBar\(feedEl, col, profileHeader\)/);
+  assert.match(source, /after: modeBar \?\? profileHeader/);
+  assert.match(source, /<span>\$\{esc\(feedModeLabel\(feedModeForColumn\(col\), col\)\)\}<\/span>/);
+  assert.match(source, /Original notes appear here; replies are tucked behind the Replies and All tabs/);
+  assert.match(source, /No media notes here/);
+  assert.match(source, /if \(isFeedModeColumn\(col\)\) scheduleReplyCounts\(col\)/);
+  assert.match(source, /const visible = typeof filterEventsForMode === 'function' \? filterEventsForMode\(base, mode\) : base/);
+  assert.match(source, /const limit = typeof RENDER_NOTE_LIMIT === 'number' \? RENDER_NOTE_LIMIT : 80/);
+  assert.match(css, /\.timeline-filters \{[\s\S]*position: sticky;[\s\S]*overflow-x: auto/);
+  assert.match(css, /\.timeline-filter \{[\s\S]*border-radius: 999px/);
+  assert.match(css, /\.timeline-filter:hover,[\s\S]*\.timeline-filter\.active \{[\s\S]*border-color: var\(--border-hot\)/);
+  assert.match(css, /\.profile-hero \+ \.timeline-filters/);
 });
 
 test('reply boxes support image uploads like the main composer', async () => {

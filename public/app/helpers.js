@@ -196,7 +196,7 @@ function isImageUrl(url) {
 }
 
 function renderImagePreview(url) {
-  return `<a class="note-media" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" loading="lazy" alt="Attached image" onerror="this.closest('.note-media')?.remove()" /></a>`;
+  return `<a class="note-media" href="${esc(url)}" target="_blank" rel="noopener noreferrer" data-media-url="${esc(url)}" aria-label="Open image viewer"><img src="${esc(url)}" loading="lazy" alt="Attached image" onerror="this.closest('.note-media')?.remove()" /></a>`;
 }
 
 function renderLinkCard(url) {

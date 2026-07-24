@@ -11,6 +11,9 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Added Pass 8 timeline quality filters to normal Feedstr columns: Notes, Replies, All, and Media modes with per-column persistence, dynamic counts, reply counts on visible notes, profile-column Notes/Replies/All/Media tabs, filtered empty states, click-the-card conversation opening, and cache-busted frontend assets.
+- Added Pass 9 media/client polish: note, composer, and reply image previews now open in an in-app lightbox with gallery navigation, keyboard controls, mobile full-screen treatment, an original-image escape hatch, and iOS-safe rendering that avoids fixed/blur overlay black-screen failures. The mobile viewer now uses a plain composited layer, forces portrait images into a flexed viewport-sized contain area, and falls back to the already-loaded thumbnail if the full image fails, so tapping Media-filter images does not leave a black or oversized screen.
+
 ## [v0.5.0] — 2026-07-21
 
 - Split the large inline browser script out of `public/index.html` into ordered plain JavaScript files under `public/app/`, keeping the no-build-step deployment while making future UI and behavior changes safer to test.

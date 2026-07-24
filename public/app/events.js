@@ -42,11 +42,14 @@ function handleEvent(subId, event, relayUrl = '') {
     return;
   }
 
-  // cache note
+  // Cache notes/events globally so quote cards and engagement/notification links can
+  // resolve them later. Only embedded one-shot fetches need to repaint every column:
+  // normal timeline subscriptions repaint their own column below, and repainting all
+  // columns for each incoming Following note makes large follow lists feel frozen.
   if (event.kind === 1 || event.kind === 6 || event.kind === 7 || event.kind === 9735) {
     const wasMissing = !state.notes.has(event.id);
     state.notes.set(event.id, event);
-    if (wasMissing) scheduleRerenderAllColumns();
+    if (wasMissing && backfillSub?.oneshot) scheduleRerenderAllColumns();
   }
 
   // cache profile
@@ -117,6 +120,7 @@ function rememberEventRelay(eventId, relayUrl) {
 function handleEose(subId, relayUrl = '') {
   const sub = state.subs.get(subId);
   if (!sub) return;
+  finishColumnRefreshForSub(subId);
   if (sub.likedBackfill) {
     unsubscribe(subId);
     if (sub._found) {

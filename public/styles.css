@@ -776,6 +776,14 @@ body {
   outline: none;
 }
 .column-btn:active { transform: translateY(1px); }
+.column-btn.refreshing {
+  color: var(--text);
+  background: rgba(124, 60, 255, 0.18);
+  border-color: rgba(181, 140, 255, 0.55);
+  box-shadow: 0 0 18px rgba(124, 60, 255, 0.16);
+}
+.column-btn.refreshing svg { animation: refresh-spin 0.9s linear infinite; }
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
 .column-btn svg { width: 15px; height: 15px; }
 .column-btn-back { color: var(--purple-2); }
 .column-feed {
@@ -786,6 +794,61 @@ body {
 .column-feed::-webkit-scrollbar { width: 4px; }
 .column-feed::-webkit-scrollbar-track { background: transparent; }
 .column-feed::-webkit-scrollbar-thumb { background: rgba(124, 60, 255, 0.3); border-radius: 2px; }
+.timeline-filters {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(188, 151, 255, 0.1);
+  background: linear-gradient(180deg, rgba(15, 10, 26, 0.97), rgba(15, 10, 26, 0.91));
+  backdrop-filter: blur(10px);
+}
+.profile-hero + .timeline-filters {
+  position: relative;
+  top: auto;
+  background: rgba(15, 10, 26, 0.76);
+  border-top: 1px solid rgba(188, 151, 255, 0.08);
+}
+.timeline-filters::-webkit-scrollbar { height: 3px; }
+.timeline-filters::-webkit-scrollbar-thumb { background: rgba(124, 60, 255, 0.35); border-radius: 999px; }
+.timeline-filter {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 6px 9px;
+  border: 1px solid rgba(188, 151, 255, 0.15);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.032);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.timeline-filter:hover,
+.timeline-filter.active {
+  border-color: var(--border-hot);
+  color: var(--text);
+  background: rgba(124, 60, 255, 0.16);
+  box-shadow: 0 0 18px rgba(124, 60, 255, 0.14);
+}
+.timeline-filter.media.active,
+.timeline-filter.media:hover {
+  border-color: rgba(247, 147, 26, 0.45);
+  background: rgba(247, 147, 26, 0.1);
+}
+.timeline-filter-count {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.timeline-filter-label { line-height: 1; }
 .column-empty {
   display: flex;
   flex-direction: column;
@@ -981,6 +1044,106 @@ body {
   width: 100%;
   max-height: 420px;
   object-fit: cover;
+}
+/* Fullscreen image viewer.
+   The overlay is the ONLY full-size element: position:fixed + inset:0 sizes it
+   to the viewport on every browser WITHOUT vh/dvh units (those paint the whole
+   layer black on iOS Safari in portrait). The <img> is a direct flex child, so
+   its max-height:100% resolves against one definite container — no nested
+   shell/figure/grid chain. Controls sit on top via position:absolute. */
+.media-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: calc(60px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+  background: rgba(4, 2, 8, 0.92);
+  overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+.media-lightbox.open { display: flex; }
+.media-lightbox-img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  border-radius: var(--radius-md);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.03);
+}
+.media-lightbox-img.failed { display: none; }
+.media-lightbox-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 10px calc(16px + env(safe-area-inset-left));
+  background: linear-gradient(180deg, rgba(4, 2, 8, 0.72), rgba(4, 2, 8, 0));
+}
+.media-lightbox-count {
+  margin-right: auto;
+  color: var(--muted);
+  font: 900 11px/1 ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.media-lightbox-open,
+.media-lightbox-close,
+.media-lightbox-nav {
+  border: 1px solid rgba(188, 151, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(10, 6, 18, 0.55);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.media-lightbox-open {
+  padding: 7px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.media-lightbox-close {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+}
+.media-lightbox-close svg { width: 17px; height: 17px; }
+.media-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+}
+.media-lightbox-nav.prev { left: 14px; }
+.media-lightbox-nav.next { right: 14px; }
+.media-lightbox-nav.next svg { transform: rotate(180deg); }
+.media-lightbox-nav svg { width: 18px; height: 18px; }
+.media-lightbox-nav[hidden] { display: none; }
+body.media-lightbox-open { overflow: hidden; }
+@media (hover: hover) and (pointer: fine) {
+  .media-lightbox-open:hover,
+  .media-lightbox-close:hover,
+  .media-lightbox-nav:hover {
+    border-color: var(--border-hot);
+    background: rgba(124, 60, 255, 0.28);
+    color: var(--text);
+  }
 }
 .note-link-list {
   display: grid;

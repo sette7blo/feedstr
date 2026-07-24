@@ -79,7 +79,7 @@ function columnHeaderHtml(col) {
       <div class="column-subtitle" data-column-subtitle>${esc(stats.subtitle)}</div>
     </div>
     <div class="column-actions">
-      <button class="column-btn" data-action="reload" title="Reload ${esc(col.name)}" aria-label="Reload ${esc(col.name)}">${iconSvg('reload')}</button>
+      <button class="column-btn${col._refreshing ? ' refreshing' : ''}" data-action="reload" title="Reload ${esc(col.name)}" aria-label="Reload ${esc(col.name)}" aria-busy="${col._refreshing ? 'true' : 'false'}">${iconSvg('reload')}</button>
       ${col.type === 'custom' ? `<button class="column-btn" data-action="edit" title="Edit ${esc(col.name)}" aria-label="Edit ${esc(col.name)}">${iconSvg('settings')}</button>` : ''}
       <button class="column-btn" data-action="close" title="Remove ${esc(col.name)}" aria-label="Remove ${esc(col.name)}">${iconSvg('x')}</button>
     </div>
@@ -87,7 +87,10 @@ function columnHeaderHtml(col) {
 }
 
 function wireColumnHeader(colEl, col) {
-  colEl.querySelector('[data-action="reload"]')?.addEventListener('click', () => reloadColumn(col));
+  colEl.querySelector('[data-action="reload"]')?.addEventListener('click', (event) => {
+    event.currentTarget.blur();
+    reloadColumn(col);
+  });
   colEl.querySelector('[data-action="close"]')?.addEventListener('click', () => removeColumn(col.id));
   colEl.querySelector('[data-action="edit"]')?.addEventListener('click', () => editCustomColumn(col));
   colEl.querySelector('[data-action="thread-back"]')?.addEventListener('click', () => closeThread(col));
@@ -120,6 +123,70 @@ function formatCount(n, one, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+const FEED_MODES = ['top', 'replies', 'all', 'media'];
+const RENDER_NOTE_LIMIT = 80;
+
+function isFeedModeColumn(col) {
+  return ['home', 'following', 'hashtag', 'profile', 'custom'].includes(col?.type);
+}
+
+function feedModeForColumn(col) {
+  if (FEED_MODES.includes(col?.feedMode)) return col.feedMode;
+  return col?.type === 'following' ? 'all' : 'top';
+}
+
+function feedModeLabel(mode, col = null) {
+  if (mode === 'top') return 'Notes';
+  if (mode === 'replies') return 'Replies';
+  if (mode === 'media') return 'Media';
+  return 'All';
+}
+
+function feedModeSummary(count, mode, col = null) {
+  if (mode === 'replies') return formatCount(count, 'reply', 'replies');
+  if (mode === 'media') return formatCount(count, 'media note');
+  if (mode === 'all') return `${formatCount(count, 'note')} all`;
+  if (col?.type === 'home') return formatCount(count, 'post');
+  return formatCount(count, 'note');
+}
+
+function chunkArray(items, size) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+function isReplyEvent(event) {
+  const parentRef = getReplyParentRef(event);
+  return Boolean(parentRef?.eventId && parentRef.eventId !== event?.id);
+}
+
+function isMediaEvent(event) {
+  return extractUrls(event?.content ?? '').some(isImageUrl);
+}
+
+function baseFeedEvents(col) {
+  return (col.events ?? [])
+    .filter(e => e.kind === 1 && !isMuted(e));
+}
+
+function filterEventsForMode(events, mode) {
+  if (mode === 'replies') return events.filter(isReplyEvent);
+  if (mode === 'media') return events.filter(isMediaEvent);
+  if (mode === 'all') return events;
+  return events.filter(e => !isReplyEvent(e));
+}
+
+function feedModeCounts(col) {
+  const events = baseFeedEvents(col);
+  return {
+    top: events.filter(e => !isReplyEvent(e)).length,
+    replies: events.filter(isReplyEvent).length,
+    all: events.length,
+    media: events.filter(isMediaEvent).length
+  };
+}
+
 function columnVisibleEventCount(col) {
   if (col.type === 'notifications') {
     return (col.events ?? [])
@@ -127,8 +194,8 @@ function columnVisibleEventCount(col) {
       .filter(Boolean)
       .filter(n => !isMutedNotification(n)).length;
   }
-  return (col.events ?? [])
-    .filter(e => e.kind === 1 && !isMuted(e)).length;
+  if (isFeedModeColumn(col)) return filterEventsForMode(baseFeedEvents(col), feedModeForColumn(col)).length;
+  return baseFeedEvents(col).length;
 }
 
 function columnKindLabel(col) {
@@ -147,14 +214,17 @@ function columnSubtitle(col) {
   const totalRelays = new Set([...(state.relays.read ?? []), ...(state.relays.write ?? [])]).size;
   const relayCopy = totalRelays ? `${open}/${totalRelays} relays` : 'relay setup pending';
   const events = columnVisibleEventCount(col);
-  if (col.type === 'home') return `${formatCount(events, 'post')} · ${relayCopy}`;
-  if (col.type === 'following') return `${formatCount(state.following.length, 'follow')} · ${relayCopy}`;
-  if (col.type === 'mentions') return `${formatCount(events, 'mention')} · legacy`;
-  if (col.type === 'hashtag') return `#${col.tag} · ${formatCount(events, 'note')}`;
-  if (col.type === 'profile') return `${shortNpub(col.pubkey)} · ${formatCount(events, 'note')}`;
-  if (col.type === 'notifications') return `${formatCount(events, 'notification')} · ${relayCopy}`;
-  if (col.type === 'custom') return `${formatCount((col.pubkeys ?? []).length, 'account')} · ${formatCount(events, 'note')}`;
-  return relayCopy;
+  const mode = feedModeForColumn(col);
+  const modeCopy = isFeedModeColumn(col) ? feedModeSummary(events, mode, col) : '';
+  const refreshPrefix = col._refreshing ? 'refreshing · ' : '';
+  if (col.type === 'home') return `${refreshPrefix}${modeCopy} · ${relayCopy}`;
+  if (col.type === 'following') return `${refreshPrefix}${formatCount(state.following.length, 'follow')} · ${modeCopy} · ${relayCopy}`;
+  if (col.type === 'mentions') return `${refreshPrefix}${formatCount(events, 'mention')} · legacy`;
+  if (col.type === 'hashtag') return `${refreshPrefix}#${col.tag} · ${modeCopy}`;
+  if (col.type === 'profile') return `${refreshPrefix}${shortNpub(col.pubkey)} · ${modeCopy}`;
+  if (col.type === 'notifications') return `${refreshPrefix}${formatCount(events, 'notification')} · ${relayCopy}`;
+  if (col.type === 'custom') return `${refreshPrefix}${formatCount((col.pubkeys ?? []).length, 'account')} · ${modeCopy}`;
+  return `${refreshPrefix}${relayCopy}`;
 }
 
 function threadSubtitle(col) {
@@ -180,6 +250,40 @@ function updateColumnHeaderMeta(col) {
   if (label) label.textContent = stats.kindLabel;
   const dot = colEl.querySelector('.column-status-dot');
   if (dot) dot.className = `column-status-dot ${stats.statusClass}`;
+  const reload = colEl.querySelector('[data-action="reload"]');
+  if (reload) {
+    reload.classList.toggle('refreshing', Boolean(col._refreshing));
+    reload.setAttribute('aria-busy', col._refreshing ? 'true' : 'false');
+    reload.title = `${col._refreshing ? 'Refreshing' : 'Reload'} ${col.name}`;
+    reload.setAttribute('aria-label', `${col._refreshing ? 'Refreshing' : 'Reload'} ${col.name}`);
+  }
+}
+
+function setColumnRefreshing(col, refreshing) {
+  if (!col) return;
+  col._refreshing = Boolean(refreshing);
+  clearTimeout(col._refreshTimer);
+  if (refreshing) {
+    col._refreshStartedAt = Date.now();
+    // Some relays never send EOSE. Always clear the visible spinner quickly so
+    // refresh cannot look permanently stuck just because a relay is slow/noisy.
+    col._refreshTimer = setTimeout(() => setColumnRefreshing(col, false), 2600);
+  } else {
+    col._refreshTimer = null;
+  }
+  updateColumnHeaderMeta(col);
+}
+
+function finishColumnRefreshForSub(subId) {
+  const sub = state.subs.get(subId);
+  if (!sub?.columnId) return;
+  const col = state.columns.find(c => c.id === sub.columnId);
+  if (!col?._refreshing) return;
+  // Keep the flash perceptible but do not wait for every relay/chunk.
+  const elapsed = Date.now() - (col._refreshStartedAt || 0);
+  const delay = Math.max(0, 450 - elapsed);
+  clearTimeout(col._refreshTimer);
+  col._refreshTimer = setTimeout(() => setColumnRefreshing(col, false), delay);
 }
 
 function updateAllColumnHeaderMeta() {
@@ -203,7 +307,10 @@ function startColumnSub(col) {
       break;
     case 'following':
       if (!followPubkeys.length) return;
-      filters = [{ kinds: [1], authors: followPubkeys, since, limit: 500 }];
+      // Large follow lists can exceed relay filter limits or become very slow as
+      // one huge authors array. Split them into bounded OR filters while keeping
+      // the same seven-day window; each relay can answer manageable chunks.
+      filters = chunkArray(followPubkeys, 100).map(authors => ({ kinds: [1], authors, since, limit: 120 }));
       break;
     case 'mentions':
       if (!state.identity?.pubkey) return;
@@ -238,7 +345,12 @@ function startColumnSub(col) {
     filters.push({ kinds: [0], authors: [col.pubkey], limit: 1 });
   }
 
-  subscribe(subId, filters, col.id, { allRelays: col.type === 'notifications' || col.type === 'mentions' });
+  const options = { allRelays: col.type === 'notifications' || col.type === 'mentions' };
+  if (col.type === 'following') {
+    options.shardFilters = true;
+    options.relayReplicas = 2;
+  }
+  subscribe(subId, filters, col.id, options);
 }
 
 // One consistent empty/waiting state across every column and the notifications feed.
@@ -257,6 +369,50 @@ function clearFeedAfter(feedEl, after = null) {
     node.remove();
     node = next;
   }
+}
+
+function ensureFeedModeBar(feedEl, col, after = null) {
+  if (!isFeedModeColumn(col)) return after;
+  let bar = feedEl.querySelector(':scope > .timeline-filters');
+  const mode = feedModeForColumn(col);
+  const counts = feedModeCounts(col);
+  const sig = `${mode}|${counts.top}|${counts.replies}|${counts.all}|${counts.media}|${col.type}`;
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.className = 'timeline-filters';
+  }
+  if (bar.dataset.sig !== sig) {
+    bar.dataset.sig = sig;
+    bar.setAttribute('role', 'tablist');
+    bar.setAttribute('aria-label', col.type === 'profile' ? 'Profile feed filter' : 'Timeline filter');
+    bar.innerHTML = FEED_MODES.map((key) => `
+      <button class="timeline-filter${mode === key ? ' active' : ''} ${key}" type="button" role="tab" aria-selected="${mode === key}" data-feed-mode="${key}" title="${esc(feedModeLabel(key, col))} ${counts[key] ?? 0}">
+        <span class="timeline-filter-label">${esc(feedModeLabel(key, col))}</span>
+        <span class="timeline-filter-count">${esc(counts[key] ?? 0)}</span>
+      </button>
+    `).join('');
+    bar.querySelectorAll('[data-feed-mode]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const nextMode = button.dataset.feedMode;
+        if (!FEED_MODES.includes(nextMode) || feedModeForColumn(col) === nextMode) return;
+        col.feedMode = nextMode;
+        saveColumns();
+        renderColumnFeed(col);
+        updateColumnHeaderMeta(col);
+      });
+    });
+  }
+  const ref = after ? after.nextSibling : feedEl.firstChild;
+  if (ref !== bar) feedEl.insertBefore(bar, ref);
+  return bar;
+}
+
+function emptyCopyForFeedMode(col) {
+  const mode = feedModeForColumn(col);
+  if (mode === 'replies') return ['No replies here', 'Switch to All or Notes if you want the broader timeline'];
+  if (mode === 'media') return ['No media notes here', 'Image posts from this source will appear in Media'];
+  if (mode === 'all') return ['No notes yet', 'Nothing from this source in the selected window'];
+  return ['No notes yet', 'Original notes appear here; replies are tucked behind the Replies and All tabs'];
 }
 
 function profileDisplayName(profile, pubkey) {
@@ -292,6 +448,7 @@ function profileHeaderSignature(pubkey, col = null) {
     p.location || '',
     zapAddressForProfile(p) || '',
     col ? columnVisibleEventCount(col) : '',
+    col ? feedModeForColumn(col) : '',
     isFollowing(pubkey) ? 'following' : 'not-following',
     isMutedProfile(pubkey) ? 'muted' : 'not-muted'
   ].join('|');
@@ -357,7 +514,7 @@ function profileHeroHtml(col) {
       ${about ? `<p class="profile-about">${formatProfileAbout(about)}</p>` : '<p class="profile-about muted">No profile bio found yet. Feedstr will fill this in when relays return kind:0 metadata.</p>'}
       ${meta ? `<div class="profile-meta-grid">${meta}</div>` : ''}
     </div>
-    <div class="profile-notes-label"><span>Notes</span><span>${formatCount(noteCount, 'visible note')}</span></div>
+    <div class="profile-notes-label"><span>${esc(feedModeLabel(feedModeForColumn(col), col))}</span><span>${formatCount(noteCount, 'visible note')}</span></div>
   `;
 }
 
@@ -402,16 +559,18 @@ function renderColumnFeed(col) {
   if (col.type === 'notifications') return renderNotificationFeed(col, feedEl);
 
   const profileHeader = col.type === 'profile' ? ensureProfileHeader(feedEl, col) : null;
-  const events = (col.events ?? [])
-    .filter(e => e.kind === 1 && !isMuted(e))
-    .slice(0, 500);
+  const modeBar = ensureFeedModeBar(feedEl, col, profileHeader);
+  const events = filterEventsForMode(baseFeedEvents(col), feedModeForColumn(col))
+    .slice(0, RENDER_NOTE_LIMIT);
 
   if (!events.length) {
-    clearFeedAfter(feedEl, profileHeader);
+    clearFeedAfter(feedEl, modeBar ?? profileHeader);
     const empty = document.createElement('div');
     if (profileHeader) empty.className = 'profile-notes-empty';
-    empty.innerHTML = emptyState('No notes yet', 'Nothing from this source in the last 24h');
+    const [emptyTitle, emptySub] = emptyCopyForFeedMode(col);
+    empty.innerHTML = emptyState(emptyTitle, emptySub);
     feedEl.appendChild(empty);
+    updateColumnHeaderMeta(col);
     return;
   }
 
@@ -423,16 +582,20 @@ function renderColumnFeed(col) {
     sigOf: e => noteProfileSignature(e),
     build: e => renderNote(e),
     patch: (el, e) => updateNoteProfile(el, e),
-    after: profileHeader
+    after: modeBar ?? profileHeader
   });
 
   if (wasAtTop) feedEl.scrollTop = 0;
   else feedEl.scrollTop = scrollTop;
 
-  // Show "N replies" on your own posts in Home.
-  if (col.type === 'home') scheduleReplyCounts(col);
-  // Show repost/reaction counts on every feed.
-  scheduleEngagementCounts(col);
+  // Show "N replies" on visible notes. Tapping the note card opens the full
+  // conversation; the reply icon stays dedicated to composing a reply.
+  if (isFeedModeColumn(col)) scheduleReplyCounts(col);
+  // Show repost/reaction counts only on narrow feeds. On Following, a single
+  // 462-author timeline can stream hundreds of notes; asking every relay for
+  // engagement on the visible set right after load creates a second heavy burst
+  // that makes the tab feel jammed on mobile.
+  if (col.type !== 'following') scheduleEngagementCounts(col);
   updateColumnHeaderMeta(col);
   // Surface newly-arrived notes when the reader is scrolled away from the top.
   updateNewNotesPill(col, feedEl, events, wasAtTop);
