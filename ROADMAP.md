@@ -25,11 +25,9 @@ from the commit that finishes them (`Closes #12`). Milestones are releases, so
 
 ## Where we are
 
-**Released:** `v0.5.0` (2026-07-21) — [changelog](CHANGELOG.md)
+**Released:** `v0.6.0` (2026-07-24) — [changelog](CHANGELOG.md)
 
-**On `main`, unreleased:** Pass 8 and Pass 9 (`e04993c`, 2026-07-24), tracked in
-[milestone v0.6.0](https://github.com/sette7blo/feedstr/milestone/1). Both verified on
-device 2026-07-24; the milestone is down to the release itself.
+**On `main`, unreleased:** nothing.
 
 ## Pass log
 
@@ -48,15 +46,15 @@ while the work happened, which is why this file exists.
 | 5 | Composer and inline replies | v0.5.0 |
 | 6 | Mobile / PWA shell | v0.5.0 |
 | 7 | Whole-app visual consistency | v0.5.0 |
-| 8 | Timeline quality filters (Notes / Replies / All / Media) | on `main`, verified — awaiting v0.6.0 |
-| 9 | Media lightbox | on `main`, verified — awaiting v0.6.0 |
+| 8 | Timeline quality filters (Notes / Replies / All / Media) | v0.6.0 |
+| 9 | Media lightbox | v0.6.0 |
 
 The sequence ends at 9. There is no Pass 10 yet — file one as `needs-spec` when a surface
 is worth a pass.
 
 ## Next
 
-1. Release v0.6.0 — [#3](https://github.com/sette7blo/feedstr/issues/3)
+Nothing queued. File the next pass as `needs-spec`, refine it to `ready`, then build it.
 
 ## Standing constraints
 

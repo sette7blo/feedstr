@@ -11,8 +11,11 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
-- Added Pass 8 timeline quality filters to normal Feedstr columns: Notes, Replies, All, and Media modes with per-column persistence, dynamic counts, reply counts on visible notes, profile-column Notes/Replies/All/Media tabs, filtered empty states, click-the-card conversation opening, and cache-busted frontend assets.
-- Added Pass 9 media/client polish: note, composer, and reply image previews now open in an in-app lightbox with gallery navigation, keyboard controls, mobile full-screen treatment, an original-image escape hatch, and iOS-safe rendering that avoids fixed/blur overlay black-screen failures. The mobile viewer now uses a plain composited layer, forces portrait images into a flexed viewport-sized contain area, and falls back to the already-loaded thumbnail if the full image fails, so tapping Media-filter images does not leave a black or oversized screen.
+## [v0.6.0] — 2026-07-24
+
+- Added timeline quality filters to columns: Notes, Replies, All, and Media modes with per-column persistence, dynamic counts, reply counts on visible notes, profile-column Notes/Replies/All/Media tabs, filtered empty states, and click-the-card conversation opening.
+- Added an in-app image lightbox: note, composer, and reply image previews open full-screen with gallery navigation, keyboard controls, an original-image escape hatch, and a fallback to the already-loaded thumbnail if the full image fails to load.
+- Fixed the image lightbox rendering as a black screen on iOS portrait. The viewer is now a single `position: fixed; inset: 0` layer with the image as a direct flex child, replacing the previous nested full-screen layers and viewport-unit sizing that iOS failed to composite in portrait.
 
 ## [v0.5.0] — 2026-07-21
 
@@ -122,7 +125,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.6.0...HEAD
+[v0.6.0]: https://github.com/sette7blo/feedstr/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/sette7blo/feedstr/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/sette7blo/feedstr/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/sette7blo/feedstr/compare/v0.2.0...v0.3.0
