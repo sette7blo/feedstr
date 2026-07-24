@@ -8,6 +8,8 @@ Direction and sequence only. **Detail lives in GitHub Issues** —
 
 Neither duplicates the other. If a line here needs a paragraph, it needs an issue.
 
+Where code lives: [`MODULES.md`](MODULES.md). Read it before opening source files.
+
 ## Working agreement
 
 Work is tracked as issues using the **Agent task** template:
