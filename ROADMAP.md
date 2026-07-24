@@ -28,9 +28,8 @@ from the commit that finishes them (`Closes #12`). Milestones are releases, so
 **Released:** `v0.5.0` (2026-07-21) — [changelog](CHANGELOG.md)
 
 **On `main`, unreleased:** Pass 8 and Pass 9 (`e04993c`, 2026-07-24), tracked in
-[milestone v0.6.0](https://github.com/sette7blo/feedstr/milestone/1). Both shipped
-syntax-checked and built but never exercised on a device, which is the whole content of
-that milestone.
+[milestone v0.6.0](https://github.com/sette7blo/feedstr/milestone/1). Both verified on
+device 2026-07-24; the milestone is down to the release itself.
 
 ## Pass log
 
@@ -49,17 +48,15 @@ while the work happened, which is why this file exists.
 | 5 | Composer and inline replies | v0.5.0 |
 | 6 | Mobile / PWA shell | v0.5.0 |
 | 7 | Whole-app visual consistency | v0.5.0 |
-| 8 | Timeline quality filters (Notes / Replies / All / Media) | on `main`, [unverified](https://github.com/sette7blo/feedstr/issues/2) |
-| 9 | Media lightbox | on `main`, [unverified](https://github.com/sette7blo/feedstr/issues/1) |
+| 8 | Timeline quality filters (Notes / Replies / All / Media) | on `main`, verified — awaiting v0.6.0 |
+| 9 | Media lightbox | on `main`, verified — awaiting v0.6.0 |
 
 The sequence ends at 9. There is no Pass 10 yet — file one as `needs-spec` when a surface
 is worth a pass.
 
 ## Next
 
-1. Verify Pass 9 on iPhone portrait — [#1](https://github.com/sette7blo/feedstr/issues/1)
-2. Verify Pass 8 in a browser and on iOS — [#2](https://github.com/sette7blo/feedstr/issues/2)
-3. Release v0.6.0 — [#3](https://github.com/sette7blo/feedstr/issues/3)
+1. Release v0.6.0 — [#3](https://github.com/sette7blo/feedstr/issues/3)
 
 ## Standing constraints
 
