@@ -54,6 +54,11 @@ Feedstr owns — feed rules, keyword mutes, column config,
 read-position, and cached notes — lives in its own DB and is never published. See
 the stack `docs/architecture.md` → Storage Boundary.
 
+## Roadmap
+
+Direction and current state live in [`ROADMAP.md`](ROADMAP.md); the work queue is
+[GitHub Issues](https://github.com/sette7blo/feedstr/issues).
+
 ## License
 
 MIT
