@@ -11,6 +11,9 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Rewrote the README install section around the published `dockersette/feedstr` image: a self-contained `compose.yaml` and `.env` to copy, pull/upgrade and version-pinning steps, and the build-from-source path moved to a development section. The previous instructions only worked from a repository checkout.
+- Corrected the documented Idenstr token scopes in the README and `.env.example` — both were missing `following:write`, `mutes:read`, `mutes:write`, `sign:kind:5`, `sign:kind:27235`, and `zaps:write`, so a token created from them would fail Feedstr's startup scope check.
+
 - Split the two largest frontend files into focused modules: `columns.js` is now columns, column feed, notifications, notes, and threads; `modals.js` is now overlays, add-column, follow, column store, mutes, and counts/cache. Behavior is unchanged — the files load in the same order — but each concern can be read and changed on its own.
 - Added `MODULES.md`, a map of which file owns what, and a header to `styles.css` pointing at its section index.
 - Made the frontend test suite derive its module list and cache-busters from `index.html` instead of hardcoding them, so splitting a module or bumping a `?v=` no longer requires editing tests. Added a check that script tags and `public/app` match exactly, catching orphaned or unreferenced modules.
