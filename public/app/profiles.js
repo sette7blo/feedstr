@@ -107,18 +107,17 @@ function handleAvatarImageError(img) {
   queueProfileFetch(pubkey);
 }
 
-// Coalesce repaints for a column. Relays stream events independently, so a
-// single scroll of the feed can trigger dozens of render requests in one frame;
-// batching them into one paint per animation frame is what stops the feed from
-// flashing as different relays answer at different times.
+// Coalesce repaints for a column. Relays stream events independently, so opening
+// the app can trigger hundreds of render requests in the first second. A short
+// timeout yields to input/paint better than one repaint per animation frame.
 const _colRenderFrames = new Map();
 function scheduleRenderColumnFeed(col) {
   if (!col?.id) return;
   if (_colRenderFrames.has(col.id)) return;
-  _colRenderFrames.set(col.id, requestAnimationFrame(() => {
+  _colRenderFrames.set(col.id, setTimeout(() => {
     _colRenderFrames.delete(col.id);
     renderColumnFeed(col);
-  }));
+  }, 150));
 }
 
 function rerenderColumnsForAuthor(pubkey) {

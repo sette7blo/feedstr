@@ -165,11 +165,29 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+function runWhenBrowserIsIdle(fn) {
+  if (typeof requestIdleCallback === 'function') return requestIdleCallback(fn, { timeout: 700 });
+  return setTimeout(fn, 0);
+}
+
+function nextIdleFrame() {
+  return new Promise((resolve) => runWhenBrowserIsIdle(resolve));
+}
+
+async function hydrateColumnCaches(columns) {
+  let globalNoteAdded = false;
+  for (const col of columns ?? []) {
+    await nextIdleFrame();
+    globalNoteAdded = (await hydrateColumnCache(col)) || globalNoteAdded;
+  }
+  if (globalNoteAdded) scheduleRerenderAllColumns();
+}
+
 async function hydrateColumnCache(col) {
   if (!col?.id) return;
   try {
     const { events } = await api(`/api/v1/cache/${col.id}`);
-    if (!Array.isArray(events) || !events.length) return;
+    if (!Array.isArray(events) || !events.length) return false;
     if (!col.events) col.events = [];
     const seen = new Set(col.events.map(e => e.id));
     let globalNoteAdded = false;
@@ -183,8 +201,10 @@ async function hydrateColumnCache(col) {
     if (col.events.length > 500) col.events = col.events.slice(0, 500);
     col._ids = new Set(col.events.map(e => e.id));
     renderColumnFeed(col);
-    if (globalNoteAdded) scheduleRerenderAllColumns();
-  } catch {}
+    return globalNoteAdded;
+  } catch {
+    return false;
+  }
 }
 
 // Bound the long-lived in-memory caches. Notes and engagement counts accumulate

@@ -68,8 +68,8 @@ async function boot() {
     refreshMuteSets();
     loadZapWalletCached();
     renderColumns();
-    for (const col of state.columns) hydrateColumnCache(col);
-    connectRelays();
+    hydrateColumnCaches(state.columns);
+    setTimeout(connectRelays, 1000);
   } catch (err) {
     setStatus(false, 'Failed to connect to Idenstr');
     renderIdenstrSummary(err);

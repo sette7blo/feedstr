@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.8.1] — 2026-07-29
+
+- Smoothed page opening by hydrating cached column snapshots one idle frame at a time, delaying live relay fan-out until the shell paints, and batching relay-driven column repaints over a short timeout instead of repainting every animation frame during startup bursts.
+
 ## [v0.8.0] — 2026-07-29
 
 - Added scheduled posting from the composer: a clock action opens a local-time scheduler, sends UTC `publish_at` plus timezone metadata to Idenstr, and exposes the scheduled queue with refresh, cancel, and publish-now controls. Feedstr now requires Idenstr token scopes `schedule:read` and `schedule:write`.
@@ -138,7 +142,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.8.1...HEAD
+[v0.8.1]: https://github.com/sette7blo/feedstr/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/sette7blo/feedstr/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/sette7blo/feedstr/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/sette7blo/feedstr/compare/v0.5.0...v0.6.0
