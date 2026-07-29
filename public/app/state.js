@@ -10,6 +10,7 @@ var state = {
   embeddedSockets: new Map(),
   notes: new Map(),
   eventRelays: new Map(), // eventId -> Set of relay URLs where the event was seen
+  ownNoteIds: new Set(), // recent notes authored by us; used to discover quote notifications via #q
   liked: new Set(),
   mutes: { entries: [] }, // Idenstr kind:10000 mute list; suppresses keywords, people, threads, and events
   likeEvents: new Map(), // noteId -> our own kind:7 reaction event id (for un-like)

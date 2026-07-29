@@ -11,9 +11,11 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.7.0] — 2026-07-28
+
+- Added first-class quote notifications: Feedstr now discovers your recent authored notes, subscribes for kind:1 `#q` references to those note ids, and shows matching events in Notifications under a new Quotes filter as `quoted your note` rows. This catches clients like Ditto that quote with `q` tags instead of adding a direct `p` mention.
 - Rewrote the README install section around the published `dockersette/feedstr` image: a self-contained `compose.yaml` and `.env` to copy, pull/upgrade and version-pinning steps, and the build-from-source path moved to a development section. The previous instructions only worked from a repository checkout.
 - Corrected the documented Idenstr token scopes in the README and `.env.example` — both were missing `following:write`, `mutes:read`, `mutes:write`, `sign:kind:5`, `sign:kind:27235`, and `zaps:write`, so a token created from them would fail Feedstr's startup scope check.
-
 - Split the two largest frontend files into focused modules: `columns.js` is now columns, column feed, notifications, notes, and threads; `modals.js` is now overlays, add-column, follow, column store, mutes, and counts/cache. Behavior is unchanged — the files load in the same order — but each concern can be read and changed on its own.
 - Added `MODULES.md`, a map of which file owns what, and a header to `styles.css` pointing at its section index.
 - Made the frontend test suite derive its module list and cache-busters from `index.html` instead of hardcoding them, so splitting a module or bumping a `?v=` no longer requires editing tests. Added a check that script tags and `public/app` match exactly, catching orphaned or unreferenced modules.
@@ -132,7 +134,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.7.0...HEAD
+[v0.7.0]: https://github.com/sette7blo/feedstr/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/sette7blo/feedstr/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/sette7blo/feedstr/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/sette7blo/feedstr/compare/v0.3.0...v0.4.0

@@ -20,6 +20,8 @@ function reloadColumn(col) {
 
 function removeColumn(id) {
   unsubscribe(`col_${id}`);
+  unsubscribe(`notification_own_${id}`);
+  unsubscribe(`quotes_${id}`);
   unsubscribe(`replies_${id}`);
   unsubscribe(`engagement_${id}`);
   unsubscribe(`thread_replies_${id}`);

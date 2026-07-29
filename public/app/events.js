@@ -30,6 +30,22 @@ function handleEvent(subId, event, relayUrl = '') {
     return;
   }
 
+  // Notification quote discovery: collect recent notes authored by us, then
+  // subscribe for kind:1 events that quote those note ids via #q. The own notes
+  // themselves are not notification rows.
+  if (backfillSub?.notificationOwnNotes) {
+    if (event.kind === 1 && event.pubkey === state.identity?.pubkey) {
+      const before = state.ownNoteIds.size;
+      state.ownNoteIds.add(event.id);
+      if (state.ownNoteIds.size !== before) {
+        state.notes.set(event.id, event);
+        const col = state.columns.find(c => c.id === backfillSub.columnId);
+        if (col) scheduleQuoteNotificationSub(col);
+      }
+    }
+    return;
+  }
+
   // thread-replies subscription: cache the reply so the open thread can show it.
   if (backfillSub?.threadReplies) {
     if (event.kind === 1) {

@@ -54,6 +54,7 @@ function renderNotificationFilters(col, counts) {
     ['all', 'All'],
     ['reply', 'Replies'],
     ['mention', 'Mentions'],
+    ['quote', 'Quotes'],
     ['zap', 'Zaps'],
     ['repost', 'Reposts'],
     ['reaction', 'Reactions']
@@ -84,6 +85,7 @@ function notificationFilterIcon(type) {
   if (type === 'all') return iconSvg('bell');
   if (type === 'reply') return iconSvg('reply');
   if (type === 'mention') return iconSvg('at');
+  if (type === 'quote') return iconSvg('repost');
   if (type === 'zap') return iconSvg('zap');
   if (type === 'repost') return iconSvg('repost');
   if (type === 'reaction') return iconSvg('heart');
@@ -91,7 +93,7 @@ function notificationFilterIcon(type) {
 }
 
 function notificationCounts(notifications) {
-  const counts = { all: notifications.length, reply: 0, mention: 0, zap: 0, repost: 0, reaction: 0 };
+  const counts = { all: notifications.length, reply: 0, mention: 0, quote: 0, zap: 0, repost: 0, reaction: 0 };
   for (const n of notifications) counts[n.type] = (counts[n.type] ?? 0) + 1;
   return counts;
 }
@@ -99,6 +101,18 @@ function notificationCounts(notifications) {
 function normalizeNotification(event) {
   if (!event || !state.identity?.pubkey) return null;
   const tags = event.tags ?? [];
+  const quotedOwnNoteId = quotedOwnNoteTarget(event);
+  if (event.kind === 1 && quotedOwnNoteId && event.pubkey !== state.identity.pubkey) {
+    return {
+      id: event.id,
+      type: 'quote',
+      actorPubkey: event.pubkey,
+      targetEventId: quotedOwnNoteId,
+      createdAt: event.created_at,
+      contentPreview: event.content ?? '',
+      rawEvent: event
+    };
+  }
   const mentionsMe = tags.some(tag => tag[0] === 'p' && tag[1] === state.identity.pubkey);
   if (!mentionsMe) return null;
 
@@ -163,6 +177,15 @@ function groupNotifications(notifications) {
     if (!group.contentPreview && n.contentPreview) group.contentPreview = n.contentPreview;
   }
   return rows.map(row => row.grouped && row.items.length === 1 ? row.items[0] : row);
+}
+
+function quotedOwnNoteTarget(event) {
+  if (!event || event.kind !== 1) return '';
+  for (const tag of event.tags ?? []) {
+    if (tag[0] !== 'q' || !tag[1]) continue;
+    if (state.ownNoteIds?.has(tag[1]) || tag[3] === state.identity?.pubkey) return tag[1];
+  }
+  return '';
 }
 
 function notificationActorName(pubkey) {
@@ -234,6 +257,7 @@ function renderNotificationRow(notification, col) {
 // yours they acted on. Returns null when there's no note to open (e.g. a profile zap).
 function notificationLink(n) {
   if (n.type === 'mention') return { parentId: n.id, selectedId: n.id };
+  if (n.type === 'quote') return { parentId: n.id, selectedId: n.id };
   if (n.type === 'reply' && n.targetEventId) return { parentId: n.targetEventId, selectedId: n.id };
   if (n.targetEventId) return { parentId: n.targetEventId, selectedId: n.targetEventId };
   return null;
@@ -243,6 +267,7 @@ function notificationIcon(notification) {
   if (notification.type === 'zap') return `${iconSvg('zap')}${notification.amountSats ? `<small>${esc(notification.amountSats)}</small>` : ''}`;
   if (notification.type === 'reply') return iconSvg('reply');
   if (notification.type === 'mention') return iconSvg('at');
+  if (notification.type === 'quote') return iconSvg('repost');
   if (notification.type === 'repost') return iconSvg('repost');
   if (notification.type === 'reaction') return iconSvg('heart');
   return iconSvg('bell');
@@ -256,6 +281,7 @@ function notificationSummary(notification) {
   }
   if (notification.type === 'reply') return 'replied';
   if (notification.type === 'mention') return 'mentioned you';
+  if (notification.type === 'quote') return 'quoted your note';
   if (notification.type === 'reaction') return notification.grouped ? `reacted ${count} times` : 'reacted';
   if (notification.type === 'repost') return notification.grouped ? `reposted your note ${count} times` : 'reposted your note';
   return 'notified you';

@@ -455,11 +455,14 @@ test('notifications are the canonical mentions surface with typed filters', asyn
   const source = await readClientSource();
   assert.match(source, /type: 'notifications', name: 'Notifications', notificationFilter: 'all'/);
   assert.doesNotMatch(source, /data-type="mentions"/);
-  for (const label of ['All', 'Replies', 'Mentions', 'Zaps', 'Reposts', 'Reactions']) {
+  for (const label of ['All', 'Replies', 'Mentions', 'Quotes', 'Zaps', 'Reposts', 'Reactions']) {
     assert.match(source, new RegExp(`\\['[^']+', '${label}'\\]`));
   }
   assert.match(source, /function normalizeNotification/);
   assert.match(source, /hasEventTag \? 'reply' : 'mention'/);
+  assert.match(source, /function quotedOwnNoteTarget/);
+  assert.match(source, /type: 'quote'/);
+  assert.match(source, /quoted your note/);
   assert.match(source, /function notificationCounts/);
   assert.match(source, /function notificationFilterIcon/);
   assert.match(source, /notification-filter-icon/);
@@ -502,6 +505,10 @@ test('notifications fan out while following feeds shard filters across relays', 
   assert.match(source, /options\.shardFilters = true/);
   assert.match(source, /options\.relayReplicas = 2/);
   assert.match(source, /col\.type === 'notifications' \|\| col\.type === 'mentions'/);
+  assert.match(source, /function startQuoteNotificationDiscovery/);
+  assert.match(source, /notificationOwnNotes: Boolean\(options\.notificationOwnNotes\)/);
+  assert.match(source, /quoteNotifications: Boolean\(options\.quoteNotifications\)/);
+  assert.match(source, /'#q': chunk/);
   assert.match(source, /typeof updateAllColumnHeaderMeta === 'function'\) updateAllColumnHeaderMeta\(\)/);
 });
 

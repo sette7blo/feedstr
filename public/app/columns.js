@@ -295,6 +295,8 @@ function updateAllColumnHeaderMeta() {
 function startColumnSub(col) {
   const subId = `col_${col.id}`;
   unsubscribe(subId);
+  unsubscribe(`notification_own_${col.id}`);
+  unsubscribe(`quotes_${col.id}`);
 
   const now = Math.floor(Date.now() / 1000);
   const since = now - 86400 * 7; // last 7 days for scrollable timelines
@@ -353,6 +355,37 @@ function startColumnSub(col) {
     options.relayReplicas = 2;
   }
   subscribe(subId, filters, col.id, options);
+  if (col.type === 'notifications') startQuoteNotificationDiscovery(col, now);
+}
+
+function startQuoteNotificationDiscovery(col, now = Math.floor(Date.now() / 1000)) {
+  if (!state.identity?.pubkey) return;
+  const since = now - 86400 * 30;
+  // Quotes use #q:<event-id>, so first learn our recent note ids. Keep this
+  // subscription separate from the visible notification stream: own notes are
+  // quote targets, not notification rows.
+  subscribe(
+    `notification_own_${col.id}`,
+    [{ kinds: [1], authors: [state.identity.pubkey], since, limit: 500 }],
+    col.id,
+    { allRelays: true, notificationOwnNotes: true }
+  );
+}
+
+function scheduleQuoteNotificationSub(col) {
+  clearTimeout(col._quoteSubTimer);
+  col._quoteSubTimer = setTimeout(() => refreshQuoteNotificationSub(col), 250);
+}
+
+function refreshQuoteNotificationSub(col) {
+  if (!state.identity?.pubkey) return;
+  const ids = [...state.ownNoteIds].slice(0, 500);
+  const subId = `quotes_${col.id}`;
+  unsubscribe(subId);
+  if (!ids.length) return;
+  const since = Math.floor(Date.now() / 1000) - 86400 * 30;
+  const filters = chunkArray(ids, 100).map(chunk => ({ kinds: [1], '#q': chunk, since, limit: 120 }));
+  subscribe(subId, filters, col.id, { allRelays: true, quoteNotifications: true });
 }
 
 // One consistent empty/waiting state across every column and the notifications feed.

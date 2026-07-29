@@ -144,6 +144,8 @@ function subscribe(subId, filters, columnId, options = {}) {
     columnId,
     allRelays: Boolean(options.allRelays),
     shardFilters: Boolean(options.shardFilters),
+    notificationOwnNotes: Boolean(options.notificationOwnNotes),
+    quoteNotifications: Boolean(options.quoteNotifications),
     relayReplicas: options.relayReplicas ?? 1,
     relayOffset: Math.floor(Math.random() * 1000),
     _sent: new Set()
