@@ -618,12 +618,99 @@ body {
   color: var(--danger-red);
 }
 .compose-media-icon,
-.compose-media-icon svg {
+.compose-media-icon svg,
+.compose-schedule-icon,
+.compose-schedule-icon svg {
   display: inline-flex;
   width: 15px;
   height: 15px;
 }
-.compose-media-icon svg { flex: 0 0 auto; }
+.compose-media-icon svg,
+.compose-schedule-icon svg { flex: 0 0 auto; }
+.compose-schedule-btn {
+  min-width: 0 !important;
+  gap: 6px;
+}
+.schedule-modal-card {
+  width: min(540px, calc(100vw - 28px));
+  max-height: min(88vh, 720px);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(124, 60, 255, 0.18), transparent 18rem),
+    var(--panel-solid);
+}
+.schedule-form {
+  display: grid;
+  gap: 12px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid rgba(188, 151, 255, 0.1);
+}
+.schedule-timezone {
+  padding: 9px 11px;
+  border: 1px solid rgba(188, 151, 255, 0.14);
+  border-radius: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 12px;
+}
+.schedule-list-section {
+  min-height: 0;
+  padding: 14px 20px 18px;
+  overflow: auto;
+}
+.schedule-list {
+  display: grid;
+  gap: 9px;
+}
+.schedule-empty {
+  padding: 12px;
+  border: 1px dashed rgba(188, 151, 255, 0.18);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.schedule-empty.error { color: var(--danger-red); }
+.schedule-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(188, 151, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+.schedule-item.failed {
+  border-color: rgba(255, 56, 100, 0.42);
+  background: rgba(255, 56, 100, 0.08);
+}
+.schedule-item-time {
+  color: var(--purple-2);
+  font: 800 12px/1.2 ui-monospace, monospace;
+}
+.schedule-item-content {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.schedule-item-error {
+  margin-top: 6px;
+  color: var(--danger-red);
+  font-size: 11px;
+}
+.schedule-item-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
 
 /* columns container */
 .columns {
@@ -2024,7 +2111,8 @@ body.media-lightbox-open { overflow: hidden; }
 
 /* input fields in modals */
 .field { margin-bottom: 12px; }
-.field label {
+.field label,
+.field > span {
   display: block;
   font-size: 12px;
   font-weight: 700;
@@ -2033,7 +2121,8 @@ body.media-lightbox-open { overflow: hidden; }
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
-.field input {
+.field input,
+.field select {
   width: 100%;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
@@ -2043,7 +2132,8 @@ body.media-lightbox-open { overflow: hidden; }
   padding: 8px 12px;
   outline: none;
 }
-.field input:focus { border-color: var(--border-hot); }
+.field input:focus,
+.field select:focus { border-color: var(--border-hot); }
 .settings-copy {
   color: var(--muted);
   margin-bottom: 14px;

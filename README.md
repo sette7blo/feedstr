@@ -100,6 +100,8 @@ sign:kind:6         # reposts
 sign:kind:7         # reactions
 sign:kind:27235     # media upload auth (NIP-98)
 zaps:write
+schedule:read       # scheduled post queue
+schedule:write      # create/cancel/publish scheduled posts
 ```
 
 Feedstr checks this list on startup and reports any missing scope in the dashboard's

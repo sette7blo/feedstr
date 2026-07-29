@@ -26,7 +26,8 @@ var state = {
   composeMentionIndex: [],
   composeMentions: [],
   zapDefaultSats: 100, // one-tap zap amount; overridden from the state store at boot
-  zapWallet: { loading: true, configured: false, balanceMsat: null, balanceAt: null, error: '' }
+  zapWallet: { loading: true, configured: false, balanceMsat: null, balanceAt: null, error: '' },
+  scheduledPosts: []
 };
 
 // Populated from /api/v1/config at boot — Feedstr's server is the single source

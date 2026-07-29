@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.8.0] — 2026-07-29
+
+- Added scheduled posting from the composer: a clock action opens a local-time scheduler, sends UTC `publish_at` plus timezone metadata to Idenstr, and exposes the scheduled queue with refresh, cancel, and publish-now controls. Feedstr now requires Idenstr token scopes `schedule:read` and `schedule:write`.
+
 ## [v0.7.0] — 2026-07-28
 
 - Added first-class quote notifications: Feedstr now discovers your recent authored notes, subscribes for kind:1 `#q` references to those note ids, and shows matching events in Notifications under a new Quotes filter as `quoted your note` rows. This catches clients like Ditto that quote with `q` tags instead of adding a direct `p` mention.
@@ -134,7 +138,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.8.0...HEAD
+[v0.8.0]: https://github.com/sette7blo/feedstr/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/sette7blo/feedstr/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/sette7blo/feedstr/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/sette7blo/feedstr/compare/v0.4.0...v0.5.0

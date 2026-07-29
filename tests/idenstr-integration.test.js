@@ -152,7 +152,7 @@ test('Feedstr exposes Idenstr connection guidance and required scoped token perm
   const source = await readClientSource();
   const serverSource = await readFile(server, 'utf8');
   // The server is the single source of truth for the required scope list.
-  for (const scope of ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235', 'zaps:write']) {
+  for (const scope of ['profile:read', 'following:read', 'following:write', 'mutes:read', 'mutes:write', 'relays:read', 'sign:kind:1', 'sign:kind:6', 'sign:kind:7', 'sign:kind:27235', 'zaps:write', 'schedule:read', 'schedule:write']) {
     assert.match(serverSource, new RegExp(scope.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   // The frontend pulls the list from /api/v1/config rather than hardcoding it.
@@ -370,6 +370,31 @@ test('composer and inline replies have identity context, counters, and polished 
   assert.match(css, /\.reply-box \{[\s\S]*border-radius: 18px;[\s\S]*box-shadow:/);
   assert.match(css, /\.reply-target-avatar\.note-avatar \{[\s\S]*width: 34px;[\s\S]*height: 34px/);
   assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*\.compose-identity \{ margin: 12px 16px 10px; \}[\s\S]*\.reply-box \{ margin: 0 8px 12px 8px; border-radius: 16px; \}/);
+});
+
+test('composer can schedule kind 1 notes through Idenstr with local timezone metadata', async () => {
+  const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
+  const serverSource = await readFile(server, 'utf8');
+  assert.match(source, /id="compose-schedule-btn"/);
+  assert.match(source, /id="schedule-modal"/);
+  assert.match(source, /type="datetime-local"/);
+  assert.match(source, /function browserTimezone/);
+  assert.match(source, /Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
+  assert.match(source, /function handleScheduleSubmit/);
+  assert.match(source, /api\('\/api\/v1\/idenstr\/scheduled-posts'/);
+  assert.match(source, /publish_at: publishAt/);
+  assert.match(source, /timezone: browserTimezone\(\)/);
+  assert.match(source, /scheduled_local: scheduleDatetime\.value/);
+  assert.match(source, /data-schedule-action="publish-now"/);
+  assert.match(source, /data-schedule-action="cancel"/);
+  assert.match(source, /scheduled-posts\/\$\{encodeURIComponent\(id\)\}\/publish-now/);
+  assert.match(source, /scheduled-posts\/\$\{encodeURIComponent\(id\)\}`/);
+  assert.match(serverSource, /schedule:read/);
+  assert.match(serverSource, /schedule:write/);
+  assert.match(css, /\.compose-schedule-btn/);
+  assert.match(css, /\.schedule-modal-card/);
+  assert.match(css, /\.schedule-list/);
 });
 
 test('composer can upload a device image through nostr.build and insert the returned URL', async () => {

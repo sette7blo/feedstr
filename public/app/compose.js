@@ -3,14 +3,26 @@ const composeText = document.getElementById('compose-text');
 const composeSend = document.getElementById('compose-send');
 const composeMediaInput = document.getElementById('compose-media-input');
 const composeMediaBtn = document.getElementById('compose-media-btn');
+const composeScheduleBtn = document.getElementById('compose-schedule-btn');
 const composeMediaStatus = document.getElementById('compose-media-status');
 const composePreview = document.getElementById('compose-preview');
 const composeIdentity = document.getElementById('compose-identity');
 const composeCount = document.getElementById('compose-count');
 const composeMentionSuggest = document.getElementById('compose-mention-suggest');
+const scheduleModal = document.getElementById('schedule-modal');
+const scheduleCloseBtn = document.getElementById('schedule-close-btn');
+const scheduleCancelBtn = document.getElementById('schedule-cancel');
+const scheduleForm = document.getElementById('schedule-form');
+const scheduleDatetime = document.getElementById('schedule-datetime');
+const scheduleStatus = document.getElementById('schedule-status');
+const scheduleList = document.getElementById('schedule-list');
+const scheduleRefreshBtn = document.getElementById('schedule-refresh');
+const scheduleTimezone = document.getElementById('schedule-timezone');
 const composeMentionState = { open: false, query: '', start: -1, end: -1, selected: 0, matches: [] };
 let composeMediaUploadInFlight = false;
 composeMediaBtn.querySelector('.compose-media-icon').innerHTML = iconSvg('image');
+composeScheduleBtn.querySelector('.compose-schedule-icon').innerHTML = iconSvg('clock');
+scheduleCloseBtn.innerHTML = iconSvg('x');
 
 // -- compose modal (opened from the sidebar button or the mobile FAB) --
 const composeModal = document.getElementById('compose-modal');
@@ -35,10 +47,38 @@ function closeCompose() {
   hideComposeMentionSuggestions();
 }
 
+function openScheduleModal() {
+  const raw = composeText.value.trim();
+  if (!raw) {
+    showComposeMediaMessage('Write the note before scheduling it.', true);
+    return;
+  }
+  const timezone = browserTimezone();
+  scheduleTimezone.textContent = `Uses your local timezone: ${timezone}`;
+  scheduleDatetime.min = localDatetimeValue(addMinutes(new Date(), 1));
+  if (!scheduleDatetime.value || Date.parse(scheduleDatetime.value) <= Date.now()) {
+    scheduleDatetime.value = localDatetimeValue(addMinutes(new Date(), 15));
+  }
+  setScheduleStatus('', false);
+  scheduleModal.classList.add('open');
+  refreshScheduledPosts();
+  requestAnimationFrame(() => scheduleDatetime.focus());
+}
+
+function closeScheduleModal() {
+  scheduleModal.classList.remove('open');
+}
+
 composeOpenBtn.onclick = openCompose;
 composeFab.onclick = openCompose;
 composeCloseBtn.onclick = closeCompose;
 composeModal.onclick = (e) => { if (e.target === composeModal) closeCompose(); };
+composeScheduleBtn.onclick = openScheduleModal;
+scheduleCloseBtn.onclick = closeScheduleModal;
+scheduleCancelBtn.onclick = closeScheduleModal;
+scheduleModal.onclick = (e) => { if (e.target === scheduleModal) closeScheduleModal(); };
+scheduleRefreshBtn.onclick = refreshScheduledPosts;
+scheduleForm.addEventListener('submit', handleScheduleSubmit);
 // Cmd/Ctrl+Enter posts from anywhere in the textarea.
 composeText.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !composeSend.disabled) {
@@ -48,6 +88,10 @@ composeText.addEventListener('keydown', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (scheduleModal.classList.contains('open')) {
+    closeScheduleModal();
+    return;
+  }
   // Let Escape close the mention popover first; only then the compose modal.
   if (composeModal.classList.contains('open')) {
     if (!composeMentionState.open) closeCompose();
@@ -451,6 +495,145 @@ function mentionTagsFromContent(text) {
     }
   }
   return tags;
+}
+
+function browserTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time';
+  } catch {
+    return 'local time';
+  }
+}
+
+function addMinutes(date, minutes) {
+  return new Date(date.getTime() + minutes * 60000);
+}
+
+function localDatetimeValue(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatScheduledTime(post) {
+  const at = new Date(Number(post.publishAt) * 1000);
+  if (!Number.isFinite(at.getTime())) return 'invalid time';
+  return at.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function setScheduleStatus(message, failed) {
+  if (!scheduleStatus) return;
+  scheduleStatus.classList.toggle('hidden', !message);
+  scheduleStatus.classList.toggle('error', Boolean(failed));
+  scheduleStatus.textContent = message;
+}
+
+async function refreshScheduledPosts() {
+  if (!scheduleList) return;
+  scheduleList.innerHTML = '<div class="schedule-empty">Loading scheduled posts...</div>';
+  try {
+    const response = await api('/api/v1/idenstr/scheduled-posts');
+    state.scheduledPosts = response.scheduledPosts ?? response.posts ?? [];
+    renderScheduledPosts();
+  } catch (err) {
+    scheduleList.innerHTML = `<div class="schedule-empty error">${esc(err.message || 'Could not load scheduled posts')}</div>`;
+  }
+}
+
+function renderScheduledPosts() {
+  const posts = (state.scheduledPosts || []).filter(post => ['pending', 'failed', 'publishing'].includes(post.status));
+  if (!posts.length) {
+    scheduleList.innerHTML = '<div class="schedule-empty">No scheduled posts yet.</div>';
+    return;
+  }
+  scheduleList.innerHTML = posts.map(post => `
+    <article class="schedule-item ${esc(post.status)}" data-scheduled-id="${esc(post.id)}">
+      <div class="schedule-item-main">
+        <div class="schedule-item-time">${esc(formatScheduledTime(post))}</div>
+        <div class="schedule-item-content">${esc(post.content || '')}</div>
+        ${post.lastError ? `<div class="schedule-item-error">${esc(post.lastError)}</div>` : ''}
+      </div>
+      <div class="schedule-item-actions">
+        <button class="btn btn-ghost btn-mini" type="button" data-schedule-action="publish-now">Publish now</button>
+        <button class="btn btn-ghost btn-mini" type="button" data-schedule-action="cancel">Cancel</button>
+      </div>
+    </article>
+  `).join('');
+  scheduleList.querySelectorAll('[data-schedule-action]').forEach(btn => {
+    btn.addEventListener('click', handleScheduledPostAction);
+  });
+}
+
+async function handleScheduledPostAction(e) {
+  const btn = e.currentTarget;
+  const item = btn.closest('[data-scheduled-id]');
+  const id = item?.dataset.scheduledId;
+  const action = btn.dataset.scheduleAction;
+  if (!id || !action) return;
+  setButtonState(btn, 'busy', action === 'cancel' ? 'Cancelling...' : 'Publishing...');
+  try {
+    if (action === 'cancel') {
+      await api(`/api/v1/idenstr/scheduled-posts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      toast('Scheduled post cancelled', 'info');
+    } else {
+      const post = await api(`/api/v1/idenstr/scheduled-posts/${encodeURIComponent(id)}/publish-now`, { method: 'POST' });
+      if (post.status === 'failed') throw new Error(post.lastError || 'Publish failed');
+      toast('Scheduled post published', 'success');
+    }
+    await refreshScheduledPosts();
+  } catch (err) {
+    toast(err.message || 'Scheduled post action failed', 'error');
+    await refreshScheduledPosts();
+  } finally {
+    setButtonState(btn, 'reset');
+  }
+}
+
+async function handleScheduleSubmit(e) {
+  e.preventDefault();
+  if (composeMediaUploadInFlight) {
+    setScheduleStatus('Wait for the image upload to finish before scheduling.', true);
+    return;
+  }
+  const raw = composeText.value.trim();
+  if (!raw) {
+    setScheduleStatus('Write the note before scheduling it.', true);
+    return;
+  }
+  const selected = new Date(scheduleDatetime.value);
+  const publishAt = Math.floor(selected.getTime() / 1000);
+  if (!Number.isInteger(publishAt) || publishAt <= Math.floor(Date.now() / 1000)) {
+    setScheduleStatus('Pick a future time.', true);
+    return;
+  }
+  const text = resolveComposeMentions(raw);
+  const submit = document.getElementById('schedule-submit');
+  setButtonState(submit, 'busy', 'Scheduling...');
+  try {
+    await api('/api/v1/idenstr/scheduled-posts', {
+      method: 'POST',
+      body: {
+        kind: 1,
+        content: text,
+        tags: mentionTagsFromContent(text),
+        publish_at: publishAt,
+        timezone: browserTimezone(),
+        scheduled_local: scheduleDatetime.value
+      }
+    });
+    composeText.value = '';
+    composeText.dispatchEvent(new Event('input'));
+    state.composeMentions = [];
+    renderComposeTags();
+    const label = selected.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    setScheduleStatus(`Scheduled for ${label}.`, false);
+    toast(`Scheduled for ${label}`, 'success');
+    await refreshScheduledPosts();
+    setTimeout(() => { closeScheduleModal(); closeCompose(); }, 700);
+  } catch (err) {
+    setScheduleStatus(err.message || 'Could not schedule post.', true);
+  } finally {
+    setButtonState(submit, 'reset');
+  }
 }
 
 composeSend.addEventListener('click', async () => {
