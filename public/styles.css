@@ -661,6 +661,15 @@ body {
   padding: 14px 20px 18px;
   overflow: auto;
 }
+.compose-schedule-list-section {
+  margin: 12px 20px 0;
+  padding: 11px 12px;
+  max-height: 190px;
+  border: 1px solid rgba(188, 151, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.compose-schedule-list-section .subsection-head { margin-bottom: 9px; }
 .schedule-list {
   display: grid;
   gap: 9px;

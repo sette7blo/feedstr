@@ -378,6 +378,7 @@ test('composer can schedule kind 1 notes through Idenstr with local timezone met
   const serverSource = await readFile(server, 'utf8');
   assert.match(source, /id="compose-schedule-btn"/);
   assert.match(source, /id="schedule-modal"/);
+  assert.match(source, /class="schedule-list-section compose-schedule-list-section"/);
   assert.match(source, /type="datetime-local"/);
   assert.match(source, /function browserTimezone/);
   assert.match(source, /Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
@@ -390,6 +391,7 @@ test('composer can schedule kind 1 notes through Idenstr with local timezone met
   assert.match(source, /data-schedule-action="cancel"/);
   assert.match(source, /scheduled-posts\/\$\{encodeURIComponent\(id\)\}\/publish-now/);
   assert.match(source, /scheduled-posts\/\$\{encodeURIComponent\(id\)\}`/);
+  assert.match(source, /function openCompose\(\) \{[\s\S]*refreshScheduledPosts\(\);/);
   assert.match(serverSource, /schedule:read/);
   assert.match(serverSource, /schedule:write/);
   assert.match(css, /\.compose-schedule-btn/);

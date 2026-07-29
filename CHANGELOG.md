@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.8.2] — 2026-07-29
+
+- Moved the scheduled queue into the main compose sheet so pending and failed scheduled posts are visible immediately when opening Compose; the Schedule button now only opens the date/time picker.
+
 ## [v0.8.1] — 2026-07-29
 
 - Smoothed page opening by hydrating cached column snapshots one idle frame at a time, delaying live relay fan-out until the shell paints, and batching relay-driven column repaints over a short timeout instead of repainting every animation frame during startup bursts.
@@ -142,7 +146,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.8.2...HEAD
+[v0.8.2]: https://github.com/sette7blo/feedstr/compare/v0.8.1...v0.8.2
 [v0.8.1]: https://github.com/sette7blo/feedstr/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/sette7blo/feedstr/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/sette7blo/feedstr/compare/v0.6.0...v0.7.0

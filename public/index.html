@@ -133,6 +133,10 @@
     <div class="compose-preview hidden" id="compose-preview" aria-label="Attachment preview"></div>
     <div class="compose-tags hidden" id="compose-tags" aria-label="Tagged people"></div>
     <div class="compose-media-status hidden" id="compose-media-status" role="status" aria-live="polite"></div>
+    <div class="schedule-list-section compose-schedule-list-section">
+      <div class="subsection-head"><span>Scheduled queue</span><button class="btn btn-ghost btn-mini" id="schedule-refresh" type="button">Refresh</button></div>
+      <div id="schedule-list" class="schedule-list"></div>
+    </div>
     <div class="compose-actions">
       <input class="compose-media-input" id="compose-media-input" type="file" accept="image/*" hidden aria-hidden="true" tabindex="-1" />
       <button class="btn btn-ghost btn-sm compose-media-btn" id="compose-media-btn" type="button" title="Insert photo" aria-label="Insert photo from this device">
@@ -167,10 +171,6 @@
         <button class="btn btn-primary" id="schedule-submit" type="submit">Schedule</button>
       </div>
     </form>
-    <div class="schedule-list-section">
-      <div class="subsection-head"><span>Scheduled queue</span><button class="btn btn-ghost btn-mini" id="schedule-refresh" type="button">Refresh</button></div>
-      <div id="schedule-list" class="schedule-list"></div>
-    </div>
   </div>
 </div>
 
@@ -187,7 +187,7 @@
 <script src="./app/notes.js?v=split-2"></script>
 <script src="./app/threads.js?v=split-2"></script>
 <script src="./app/interactions.js?v=frontend-split-2"></script>
-<script src="./app/compose.js?v=schedule-1"></script>
+<script src="./app/compose.js?v=schedule-queue-1"></script>
 <script src="./app/overlays.js?v=split-2"></script>
 <script src="./app/add-column.js?v=split-2"></script>
 <script src="./app/follow.js?v=split-2"></script>

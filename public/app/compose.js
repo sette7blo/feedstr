@@ -38,6 +38,7 @@ function openCompose() {
   renderComposeIdentity();
   updateComposeSendState();
   composeModal.classList.add('open');
+  refreshScheduledPosts();
   // Let the modal paint before focusing so iOS reliably raises the keyboard.
   requestAnimationFrame(() => composeText.focus());
 }
@@ -61,7 +62,6 @@ function openScheduleModal() {
   }
   setScheduleStatus('', false);
   scheduleModal.classList.add('open');
-  refreshScheduledPosts();
   requestAnimationFrame(() => scheduleDatetime.focus());
 }
 
@@ -628,7 +628,7 @@ async function handleScheduleSubmit(e) {
     setScheduleStatus(`Scheduled for ${label}.`, false);
     toast(`Scheduled for ${label}`, 'success');
     await refreshScheduledPosts();
-    setTimeout(() => { closeScheduleModal(); closeCompose(); }, 700);
+    setTimeout(closeScheduleModal, 700);
   } catch (err) {
     setScheduleStatus(err.message || 'Could not schedule post.', true);
   } finally {
