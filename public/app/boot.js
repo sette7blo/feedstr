@@ -30,22 +30,28 @@ async function boot() {
     state.relays.read = relays.read ?? [];
     state.relays.write = relays.write ?? [];
     if (privateRelayUrl) state.relays.read = [privateRelayUrl, ...state.relays.read];
-    state.following = directory.map(e => ({
-      pubkey: e.pubkey,
-      npub: '',
-      petname: e.petname ?? '',
-      name: e.name ?? e.petname ?? '',
-      picture: e.picture ?? ''
-    }));
+    state.following = directory.map(e => {
+      const pubkey = toHexPubkey(e.pubkey ?? e.npub);
+      if (!pubkey) return null;
+      return {
+        pubkey,
+        npub: e.pubkey?.startsWith?.('npub') ? e.pubkey : (e.npub ?? ''),
+        petname: e.petname ?? '',
+        name: e.name ?? e.petname ?? '',
+        picture: e.picture ?? ''
+      };
+    }).filter(Boolean);
     refreshFollowingSet();
 
     // Seed profile cache from Idenstr's directory. Keep the full profile payload
     // when available so zap fields such as lud16/lud06/lightningAddress are not
-    // discarded before Feedstr's own kind:0 refresh runs.
+    // discarded before Feedstr's own kind:0 refresh runs. Idenstr may return
+    // follows as npub/nprofile, but relay filters and cache keys must be hex.
     for (const e of directory) {
-      if (e.pubkey) {
+      const pubkey = toHexPubkey(e.pubkey ?? e.npub);
+      if (pubkey) {
         const profile = e.profile ?? {};
-        state.profiles.set(e.pubkey, {
+        state.profiles.set(pubkey, {
           ...profile,
           name: profile.name ?? e.name ?? '',
           display_name: profile.display_name ?? profile.displayName ?? e.name ?? '',

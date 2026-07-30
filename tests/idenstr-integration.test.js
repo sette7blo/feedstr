@@ -169,6 +169,14 @@ test('Feedstr exposes Idenstr connection guidance and required scoped token perm
   assert.doesNotMatch(source, /feedstrHostBind|Feedstr bind IP|bind IP changes/);
 });
 
+test('Feedstr normalizes Idenstr following directory entries to hex pubkeys', async () => {
+  const source = await readClientSource();
+  assert.match(source, /const pubkey = toHexPubkey\(e\.pubkey \?\? e\.npub\)/);
+  assert.match(source, /if \(!pubkey\) return null/);
+  assert.match(source, /\.filter\(Boolean\)/);
+  assert.match(source, /state\.profiles\.set\(pubkey/);
+});
+
 test('Feedstr exposes a zap action that delegates NIP-57 payment to Idenstr', async () => {
   const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
