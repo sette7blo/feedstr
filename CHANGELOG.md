@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.8.3] — 2026-07-30
+
+- Fixed the following directory when Idenstr returns follows as `npub`/`nprofile` instead of hex. Feedstr now normalizes every directory entry to a hex pubkey before it reaches the following list, the following set, and the profile cache, and drops entries it cannot resolve. Previously those follows produced relay filters and cache keys that never matched, so a Following column could come up empty and follow state read as not-followed.
+
 ## [v0.8.2] — 2026-07-29
 
 - Moved the scheduled queue into the main compose sheet so pending and failed scheduled posts are visible immediately when opening Compose; the Schedule button now only opens the date/time picker.
@@ -146,7 +150,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.8.3...HEAD
+[v0.8.3]: https://github.com/sette7blo/feedstr/compare/v0.8.2...v0.8.3
 [v0.8.2]: https://github.com/sette7blo/feedstr/compare/v0.8.1...v0.8.2
 [v0.8.1]: https://github.com/sette7blo/feedstr/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/sette7blo/feedstr/compare/v0.7.0...v0.8.0

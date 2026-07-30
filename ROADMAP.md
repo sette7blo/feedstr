@@ -27,9 +27,14 @@ from the commit that finishes them (`Closes #12`). Milestones are releases, so
 
 ## Where we are
 
-**Released:** `v0.6.0` (2026-07-24) — [changelog](CHANGELOG.md)
+**Released:** `v0.8.3` (2026-07-30) — [changelog](CHANGELOG.md)
 
 **On `main`, unreleased:** nothing.
+
+Since `v0.6.0` the work has been features and quality rather than numbered UI passes:
+quote notifications (`v0.7.0`), scheduled posting via Idenstr (`v0.8.0`), startup
+smoothing (`v0.8.1`), and the following-directory npub fix (`v0.8.3`). The frontend was
+also split into 21 modules — see [`MODULES.md`](MODULES.md).
 
 ## Pass log
 
@@ -51,8 +56,8 @@ while the work happened, which is why this file exists.
 | 8 | Timeline quality filters (Notes / Replies / All / Media) | v0.6.0 |
 | 9 | Media lightbox | v0.6.0 |
 
-The sequence ends at 9. There is no Pass 10 yet — file one as `needs-spec` when a surface
-is worth a pass.
+The sequence ends at 9 and nothing since `v0.6.0` has been a numbered pass. There is no
+Pass 10 yet — file one as `needs-spec` when a surface is worth a pass.
 
 ## Next
 
