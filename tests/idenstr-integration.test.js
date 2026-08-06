@@ -12,7 +12,7 @@ const appDir = new URL('../public/app/', import.meta.url);
 // module or bumping a ?v= cache-buster does not require editing this file.
 async function scriptTags() {
   const source = await readFile(html, 'utf8');
-  return [...source.matchAll(/<script src="\.\/app\/([a-z0-9-]+\.js)\?v=([^"]+)"><\/script>/g)]
+  return [...source.matchAll(/<script defer src="\.\/app\/([a-z0-9-]+\.js)\?v=([^"]+)"><\/script>/g)]
     .map(([, file, version]) => ({ file, version }));
 }
 
@@ -55,10 +55,22 @@ test('frontend script is split out of index.html into ordered app files', async 
   }
 });
 
-test('stylesheet and manifest are cache-busted', async () => {
+test('frontend shell paints before app scripts hydrate', async () => {
   const source = await readFile(html, 'utf8');
+  assert.match(source, /<style>\s*html, body \{ background: #040208; color: #f4efff; \}/);
   assert.match(source, /styles\.css\?v=[^"]+/);
   assert.match(source, /manifest\.webmanifest\?v=[^"]+/);
+  assert.doesNotMatch(source, /<script src="\.\/app\//);
+  assert.match(source, /<script defer src="\.\/app\/state\.js\?v=/);
+  assert.match(source, /<script defer src="\.\/app\/init\.js\?v=/);
+});
+
+test('versioned static assets are immutable cached', async () => {
+  const source = await readFile(server, 'utf8');
+  assert.match(source, /url\.searchParams\.has\('v'\)/);
+  assert.match(source, /cacheControl\(filePath, versionedAsset\)/);
+  assert.match(source, /if \(versionedAsset\) return 'public, max-age=31536000, immutable'/);
+  assert.match(source, /if \(ext === '\.html'\) return 'no-store'/);
 });
 
 test('mobile form controls stay at the iOS no-zoom font size', async () => {
@@ -78,17 +90,22 @@ test('sidebar column list can close columns directly on mobile', async () => {
   assert.match(source, /aria-label', `Close \$\{col\.name\} column`/);
   assert.match(source, /event\.stopPropagation\(\);\s*removeColumn\(col\.id\);/);
   assert.match(source, /#column-list \[data-side-col="\$\{id\}"\]\`\)\?\.remove\(\)/);
+  assert.match(source, /class="sidebar-column-icon"/);
+  assert.match(source, /sidebarColumnIcon\(col\)/);
+  assert.match(source, /function updateSidebarActiveColumn/);
   assert.match(css, /\.sidebar-column-close \{[\s\S]*width: 34px;[\s\S]*height: 34px;/);
-  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.sidebar-column-close \{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*opacity: 1;/);
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.sidebar-column-close \{[\s\S]*width: 38px;[\s\S]*height: 38px;[\s\S]*opacity: \.86;/);
 });
 
 test('mobile drawer stays compact on iOS while preserving close tap targets', async () => {
   const css = await readFile(styles, 'utf8');
-  assert.match(css, /Drawer fix 1: iOS side menu should feel compact/);
-  assert.match(css, /\.sidebar \{[\s\S]*width: clamp\(232px, 64vw, 268px\);[\s\S]*max-width: calc\(100vw - 84px\);/);
-  assert.match(css, /@media \(max-width: 390px\) \{[\s\S]*width: clamp\(220px, 62vw, 244px\);[\s\S]*max-width: calc\(100vw - 92px\);/);
-  assert.match(css, /\.sidebar-item \{[\s\S]*min-height: 44px;[\s\S]*font-size: 14px;/);
-  assert.match(css, /\.sidebar-column-close \{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*margin-right: 6px;/);
+  assert.match(css, /Drawer fix 2: polished mobile side menu with compact column chips/);
+  assert.match(css, /\.sidebar \{[\s\S]*width: clamp\(252px, 68vw, 292px\);[\s\S]*max-width: calc\(100vw - 68px\);[\s\S]*border-radius: 0 22px 22px 0/);
+  assert.match(css, /@media \(max-width: 390px\) \{[\s\S]*width: clamp\(242px, 72vw, 278px\);[\s\S]*max-width: calc\(100vw - 54px\);/);
+  assert.match(css, /\.sidebar-search-button \{[\s\S]*min-height: 50px;[\s\S]*border-radius: 18px/);
+  assert.match(css, /\.sidebar-column-jump \{[\s\S]*min-height: 50px;[\s\S]*border-radius: 16px;[\s\S]*font-size: 15px/);
+  assert.match(css, /\.sidebar-column-item\.active \.sidebar-column-jump/);
+  assert.match(css, /\.connection-chip \{[\s\S]*min-height: 56px;[\s\S]*border-radius: 16px/);
 });
 
 test('final visual consistency pass normalizes focus, surfaces, and reduced motion', async () => {
@@ -118,11 +135,38 @@ test('mobile PWA finish protects safe areas, snapping columns, and standalone me
   assert.equal(manifestBody.theme_color, '#040208');
   assert.ok(Array.isArray(manifestBody.shortcuts) && manifestBody.shortcuts.length >= 1);
   assert.match(css, /Pass 6: mobile\/PWA finish/);
-  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*\.columns \{[\s\S]*scroll-snap-type: x mandatory[\s\S]*scrollbar-width: none/);
-  assert.match(css, /\.column \{[\s\S]*scroll-snap-align: start;[\s\S]*scroll-snap-stop: always/);
-  assert.match(css, /\.column-feed \{[\s\S]*padding-bottom: calc\(86px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*\.columns \{[\s\S]*height: calc\(100dvh - var\(--mobile-topbar-total\)\);[\s\S]*scroll-snap-type: x mandatory[\s\S]*scrollbar-width: none/);
+  assert.match(css, /\.column \{[\s\S]*height: 100%;[\s\S]*scroll-snap-align: start;[\s\S]*scroll-snap-stop: always/);
+  assert.match(css, /\.column-feed \{[\s\S]*padding-bottom: calc\(var\(--mobile-bottom-nav-height\) \+ 18px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(css, /\.mobile-menu-button,[\s\S]*\.connection-chip \{[\s\S]*min-width: 44px;[\s\S]*min-height: 44px/);
   assert.match(css, /@media \(display-mode: standalone\)/);
+});
+
+test('mobile bottom nav gives phones Home, Feeds, Post, Alerts, and Search tabs', async () => {
+  const source = await readClientSource();
+  const htmlSource = await readFile(html, 'utf8');
+  const css = await readFile(styles, 'utf8');
+  assert.match(htmlSource, /id="mobile-bottom-nav"/);
+  assert.match(htmlSource, /id="mobile-nav-home"[\s\S]*Open Home feed/);
+  assert.match(htmlSource, /id="mobile-nav-feeds"[\s\S]*Choose Feedstr columns/);
+  assert.match(htmlSource, /id="mobile-nav-compose"[\s\S]*Compose a note/);
+  assert.match(htmlSource, /id="mobile-nav-notifications"[\s\S]*Open Notifications/);
+  assert.match(htmlSource, /id="mobile-nav-search"[\s\S]*Search Nostr profiles/);
+  assert.match(source, /mobileNavHome\.onclick = \(\) => openMobileNavColumn\('home'\)/);
+  assert.match(source, /mobileNavFeeds\.onclick = \(\) => toggleMobileMenu\(\)/);
+  assert.match(source, /function toggleMobileMenu\(\) \{[\s\S]*updateMobileNavActive\(\);[\s\S]*\}/);
+  assert.match(source, /mobileNavCompose\.onclick = \(\) => openCompose\(\)/);
+  assert.match(source, /mobileNavNotifications\.onclick = \(\) => openMobileNavColumn\('notifications'\)/);
+  assert.match(source, /mobileNavSearch\.onclick = \(\) => \{ closeMobileMenu\(\); showPeopleSearch\?\.\(\); updateMobileNavActive\('search'\); \}/);
+  assert.match(source, /function updateMobileNavActive/);
+  assert.match(css, /\.mobile-bottom-nav \{[\s\S]*display: none;[\s\S]*grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*--mobile-bottom-nav-height: 58px/);
+  assert.match(css, /\.mobile-bottom-nav \{[\s\S]*padding: 5px max\(8px, env\(safe-area-inset-right\)\) max\(3px, calc\(env\(safe-area-inset-bottom\) - 18px\)\)/);
+  assert.match(css, /\.mobile-bottom-nav \{[\s\S]*border-top: 0;[\s\S]*background: linear-gradient\(180deg, rgba\(4, 2, 8, 0\)/);
+  assert.match(css, /\.mobile-bottom-item > span:not\(\.mobile-bottom-icon\),\s*\.mobile-bottom-compose > span:not\(\.mobile-bottom-compose-icon\) \{[\s\S]*max-width: 0;[\s\S]*opacity: 0/);
+  assert.match(css, /\.mobile-bottom-item\.active > span:not\(\.mobile-bottom-icon\) \{[\s\S]*max-width: 64px;[\s\S]*opacity: 1/);
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.mobile-bottom-nav \{ display: grid; \}/);
+  assert.match(css, /\.mobile-bottom-compose \{[\s\S]*linear-gradient\(135deg, var\(--sovereign-purple\), #4d1fd1\)/);
 });
 
 test('settings entry is a single bottom-left gear chip, not a top-right Idenstr button', async () => {
@@ -578,6 +622,7 @@ test('mutes come from Idenstr and filter notifications before counts/rendering',
 
 test('note content renders inline image previews and link cards', async () => {
   const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
   assert.match(source, /function extractUrls/);
   assert.match(source, /function isImageUrl/);
   assert.match(source, /function renderImagePreview/);
@@ -588,6 +633,9 @@ test('note content renders inline image previews and link cards', async () => {
   assert.match(source, /function removePreviewedTokens/);
   assert.match(source, /tokenSet\.has\(clean\) \? trailing : match/);
   assert.match(source, /rel="noopener noreferrer"/);
+  assert.match(css, /\.note-media-grid:has\(\.note-media:nth-child\(2\)\):not\(:has\(\.note-media:nth-child\(3\)\)\)/);
+  assert.match(css, /aspect-ratio: 1 \/ 1/);
+  assert.match(css, /\.note-media-grid:has\(\.note-media:nth-child\(2\)\):not\(:has\(\.note-media:nth-child\(3\)\)\) \.note-media img \{[\s\S]*height: 100%;[\s\S]*max-height: none/);
 });
 
 test('Pass 9 opens note media in an in-app lightbox viewer', async () => {
@@ -770,7 +818,7 @@ test('reply draft boxes survive feed reconciliation while typing', async () => {
   assert.match(source, /querySelector\(`:scope > \.reply-box\[data-reply-for=/);
 });
 
-test('reply boxes hide the mobile compose FAB only while the reply UI is active', async () => {
+test('reply boxes hide mobile compose navigation only while the reply UI is active', async () => {
   const source = await readClientSource();
   const css = await readFile(styles, 'utf8');
   assert.match(source, /function setInlineReplyActive/);
@@ -783,7 +831,8 @@ test('reply boxes hide the mobile compose FAB only while the reply UI is active'
   assert.match(source, /box\.addEventListener\('focusout', \(\) => setTimeout\(refreshInlineReplyActive, 0\)\)/);
   assert.match(source, /refreshInlineReplyActive\(\);\n\}/);
   assert.doesNotMatch(css, /body:has\(\.reply-box\) \.compose-fab/);
-  assert.match(css, /body\.inline-reply-active \.compose-fab,\s*body:has\(\.reply-box:focus-within\) \.compose-fab \{ display: none; \}/);
+  assert.doesNotMatch(css, /body:has\(\.reply-box\) \.mobile-bottom-nav/);
+  assert.match(css, /body\.inline-reply-active \.mobile-bottom-nav,\s*body:has\(\.reply-box:focus-within\) \.mobile-bottom-nav \{ display: none; \}/);
 });
 
 test('reply notes show a quiet inline cue and open the conversation in-column', async () => {
@@ -802,8 +851,13 @@ test('reply notes show a quiet inline cue and open the conversation in-column', 
   assert.match(source, /function renderThreadNote/);
   assert.match(source, /function buildConversationChain/);
   assert.match(source, /thread-chain/);
-  assert.match(source, /thread-replies/);
-  assert.match(source, /thread-selected/);
+  assert.match(source, /function threadReplyItemsFor/);
+  assert.match(source, /function renderThreadReplyItem/);
+  assert.match(source, /function getRootRef/);
+  assert.match(source, /replies in thread/);
+  assert.match(source, /eventReferencesNote\(ev, noteId\)/);
+  assert.match(source, /walk\(noteId, 1\)/);
+  assert.match(source, /style\.marginLeft = `\$\{10 \+ \(Math\.min\(Math\.max\(1, item\.depth \|\| 1\), 8\) - 1\) \* 18\}px`/);
   assert.match(source, /fetchEmbeddedEvent\(parentRef\.eventId, parentRef\.relays\)/);
   assert.match(source, /function scheduleEmbeddedFetch/);
   assert.match(source, /const filter = \{ kinds: \[1\], ids, limit: ids\.length \}/);
@@ -828,7 +882,7 @@ test('feeds reconcile in place so avatars do not strobe as relays stream events'
   assert.match(source, /reconcileChildren\(feedEl, events,/);
   assert.match(source, /reconcileChildren\(feedEl, rows,/);
   assert.match(source, /reconcileChildren\(chainEl, chain,/);
-  assert.match(source, /reconcileChildren\(repliesEl, replies,/);
+  assert.match(source, /reconcileChildren\(repliesEl, replyItems,/);
   // When a row's profile loads it is patched in place, not rebuilt, so the
   // hovered note's element and its avatar <img> survive.
   assert.match(source, /function updateNoteProfile/);
@@ -841,6 +895,7 @@ test('feeds reconcile in place so avatars do not strobe as relays stream events'
 
 test('nostr profile tags render as people and composer can tag follows', async () => {
   const source = await readClientSource();
+  const css = await readFile(styles, 'utf8');
   assert.match(source, /function expandIndexedNostrReferences/);
   assert.ok(source.includes('replace(/#\\[(\\d+)\\]/g'));
   assert.match(source, /tag\[0\] === 'p'/);
@@ -863,6 +918,36 @@ test('nostr profile tags render as people and composer can tag follows', async (
   assert.match(source, /profileSockets/);
   assert.match(source, /publishEvent\(1, text, mentionTagsFromContent\(text\)\)/);
   assert.match(source, /function encodeNprofile/);
+  assert.match(css, /\.mention-suggest \{[\s\S]*top: calc\(100% \+ 8px\);[\s\S]*overscroll-behavior: contain/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*\.mention-suggest \{[\s\S]*position: fixed;[\s\S]*bottom: calc\(var\(--mobile-bottom-nav-height\) \+ env\(safe-area-inset-bottom\)\);[\s\S]*max-height: min\(360px, 46dvh\)/);
+  assert.match(css, /\.mention-suggest-option \{[\s\S]*min-height: 52px;[\s\S]*padding: 10px/);
+});
+
+test('Feedstr people search finds profiles on relays and opens profile columns', async () => {
+  const source = await readClientSource();
+  const htmlSource = await readFile(html, 'utf8');
+  const css = await readFile(styles, 'utf8');
+  const serverSource = await readFile(server, 'utf8');
+  assert.match(htmlSource, /id="feedstr-search-btn"[\s\S]*Search people/);
+  assert.match(htmlSource, /app\/search\.js\?v=search-polish-1/);
+  assert.match(source, /function showPeopleSearch/);
+  assert.match(source, /id="people-search-form"/);
+  assert.match(source, /Search people/);
+  assert.match(source, /people-search-badge/);
+  assert.match(source, /people-search-submit/);
+  assert.match(source, /function searchRelayProfiles/);
+  assert.match(source, /\{ kinds: \[0\], search: query, limit \}/);
+  assert.match(source, /profileDiscoveryRelays/);
+  assert.match(source, /\/api\/v1\/nostr\/nip05\?address=/);
+  assert.match(source, /data-search-open-profile/);
+  assert.match(source, /openProfileColumn\(pubkey/);
+  assert.match(source, /data-search-follow/);
+  assert.match(css, /\.sidebar-search-button/);
+  assert.match(css, /\.people-search-modal/);
+  assert.match(css, /\.people-result-card/);
+  assert.match(serverSource, /url\.pathname === '\/api\/v1\/nostr\/nip05'/);
+  assert.match(serverSource, /async function resolveNip05/);
+  assert.match(serverSource, /\.well-known\/nostr\.json\?name=/);
 });
 
 test('zap notifications resolve human zapper and amount before rendering', async () => {

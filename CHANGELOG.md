@@ -11,6 +11,13 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v0.9.0] — 2026-08-06
+
+- Added a native-feeling mobile bottom navigation bar with Home, Feeds, Post, Alerts, and Search tabs, active-label-only behavior, safe-area handling, and mobile layout fixes so timelines extend behind the translucent nav instead of leaving a black shelf.
+- Added Feedstr people/profile search: desktop sidebar Search people entry and mobile Search tab open a relay-backed search sheet that supports local follows/cache, exact npub/nprofile/hex keys, NIP-05 lookup, and best-effort NIP-50 profile search, with result cards that open profile columns and can follow users through Idenstr.
+- Polished the mobile side drawer and people search sheet after real-device feedback: calmer drawer width/row treatment, clearer nav contrast, compact search header, softer input panel, shorter copy, better keyboard/mobile sizing, and updated cache-busters for PWA refreshes.
+- Improved thread rendering and Feedstr/Idenstr integration coverage around profile search, NIP-05 proxying, mobile navigation, drawer behavior, and search styling.
+
 ## [v0.8.3] — 2026-07-30
 
 - Fixed the following directory when Idenstr returns follows as `npub`/`nprofile` instead of hex. Feedstr now normalizes every directory entry to a hex pubkey before it reaches the following list, the following set, and the profile cache, and drops entries it cannot resolve. Previously those follows produced relay filters and cache keys that never matched, so a Following column could come up empty and follow state read as not-followed.
@@ -150,7 +157,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/sette7blo/feedstr/compare/v0.9.0...HEAD
+[v0.9.0]: https://github.com/sette7blo/feedstr/compare/v0.8.3...v0.9.0
 [v0.8.3]: https://github.com/sette7blo/feedstr/compare/v0.8.2...v0.8.3
 [v0.8.2]: https://github.com/sette7blo/feedstr/compare/v0.8.1...v0.8.2
 [v0.8.1]: https://github.com/sette7blo/feedstr/compare/v0.8.0...v0.8.1

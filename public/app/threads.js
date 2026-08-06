@@ -18,7 +18,9 @@ function closeThread(col) {
   renderColumnFeed(col);
 }
 
-// Live-fetch direct replies to the focused note so they render under it.
+// Live-fetch every reply that references the focused note. NIP-10 descendants
+// keep the focused note as their root `e` tag, so this pulls the full subtree,
+// not just the direct children.
 function fetchThreadReplies(col, noteId) {
   if (!noteId) return;
   const subId = `thread_replies_${col.id}`;
@@ -29,14 +31,52 @@ function fetchThreadReplies(col, noteId) {
   for (const ws of sockets) ws.send(JSON.stringify(['REQ', subId, filter]));
 }
 
-// Notes already in cache whose computed reply parent is this note (NIP-10).
-function threadRepliesFor(noteId) {
-  const out = [];
+function eventReferencesNote(event, noteId) {
+  return (event?.tags ?? []).some(tag => tag[0] === 'e' && tag[1] === noteId);
+}
+
+// Notes already in cache that belong under this note. Other clients count all
+// descendants in a conversation, so Feedstr renders the whole NIP-10 subtree too:
+// direct replies first, then nested replies indented below their parent.
+function threadReplyItemsFor(noteId) {
+  const candidates = [];
   for (const ev of state.notes.values()) {
     if (ev.kind !== 1 || ev.id === noteId || isMuted(ev)) continue;
-    if (getReplyParentRef(ev)?.eventId === noteId) out.push(ev);
+    if (eventReferencesNote(ev, noteId)) candidates.push(ev);
   }
-  return out.sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0));
+
+  const byParent = new Map();
+  const byId = new Map(candidates.map(ev => [ev.id, ev]));
+  for (const ev of candidates) {
+    const parentId = getReplyParentRef(ev)?.eventId;
+    if (!parentId) continue;
+    if (!byParent.has(parentId)) byParent.set(parentId, []);
+    byParent.get(parentId).push(ev);
+  }
+  for (const list of byParent.values()) list.sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0));
+
+  const out = [];
+  const seen = new Set();
+  const walk = (parentId, depth) => {
+    for (const ev of byParent.get(parentId) ?? []) {
+      if (seen.has(ev.id)) continue;
+      seen.add(ev.id);
+      out.push({ event: ev, depth: Math.min(depth, 8) });
+      walk(ev.id, depth + 1);
+    }
+  };
+  walk(noteId, 1);
+
+  // If a relay gave us descendants before their intermediate parent arrived,
+  // still show them rather than hiding visible thread activity.
+  const orphans = candidates
+    .filter(ev => !seen.has(ev.id) && getRootRef(ev)?.eventId === noteId)
+    .sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0));
+  for (const ev of orphans) {
+    seen.add(ev.id);
+    out.push({ event: ev, depth: byId.has(getReplyParentRef(ev)?.eventId) ? 2 : 1 });
+  }
+  return out;
 }
 
 const threadRerenderTimers = new Map();
@@ -54,7 +94,7 @@ function renderThread(col, feedEl = document.querySelector(`[data-col="${col.id}
   const { parentId, selectedId } = col.thread;
   const focusedId = selectedId || parentId;
   const chain = buildConversationChain(focusedId, parentId);
-  const replies = threadRepliesFor(focusedId);
+  const replyItems = threadReplyItemsFor(focusedId);
   const prevScroll = feedEl.scrollTop;
 
   // Build the thread skeleton once, then reconcile its two lists in place so
@@ -91,15 +131,19 @@ function renderThread(col, feedEl = document.querySelector(`[data-col="${col.id}
     build: item => renderThreadNote(item, selectedId)
   });
 
-  // Direct replies to the focused note, listed below.
-  label.textContent = replies.length
-    ? (replies.length === 1 ? '1 reply' : `${replies.length} replies`)
+  // Full descendant tree for the focused note, flattened in thread order and
+  // indented by depth so nested conversations do not disappear behind a count.
+  label.textContent = replyItems.length
+    ? (replyItems.length === 1 ? '1 reply in thread' : `${replyItems.length} replies in thread`)
     : 'No replies yet';
-  reconcileChildren(repliesEl, replies, {
-    keyOf: r => r.id,
-    sigOf: r => noteProfileSignature(r),
-    build: r => renderNote(r, { thread: true, reply: true }),
-    patch: (el, r) => updateNoteProfile(el, r),
+  reconcileChildren(repliesEl, replyItems, {
+    keyOf: item => item.event.id,
+    sigOf: item => `${item.depth}:${noteProfileSignature(item.event)}`,
+    build: item => renderThreadReplyItem(item),
+    patch: (el, item) => {
+      updateNoteProfile(el, item.event);
+      el.style.marginLeft = `${10 + (Math.min(Math.max(1, item.depth || 1), 8) - 1) * 18}px`;
+    },
     after: label
   });
 
@@ -126,6 +170,13 @@ function renderThreadNote(item, selectedId) {
   return renderNote(item.event, { thread: true, selected: item.id === selectedId });
 }
 
+function renderThreadReplyItem(item) {
+  const el = renderNote(item.event, { thread: true, reply: true });
+  el.classList.add('thread-reply');
+  el.style.marginLeft = `${10 + (Math.min(Math.max(1, item.depth || 1), 8) - 1) * 18}px`;
+  return el;
+}
+
 function buildConversationChain(selectedId, fallbackParentId) {
   const ids = [];
   const seen = new Set();
@@ -144,6 +195,14 @@ function buildConversationChain(selectedId, fallbackParentId) {
   return ids.map(id => ({ id, event: state.notes.get(id) }));
 }
 
+
+function getRootRef(event) {
+  const eTags = (event?.tags ?? []).filter(tag => tag[0] === 'e' && isHex(tag[1], 64));
+  if (!eTags.length) return null;
+  const rootTag = eTags.find(tag => tag[3] === 'root');
+  const firstTag = rootTag ?? eTags[0];
+  return { eventId: firstTag[1], relays: firstTag[2] ? [firstTag[2]] : [] };
+}
 
 function getReplyParentRef(event) {
   const eTags = (event?.tags ?? []).filter(tag => tag[0] === 'e' && isHex(tag[1], 64));

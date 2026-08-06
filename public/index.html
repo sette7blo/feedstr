@@ -7,6 +7,9 @@
   <meta name="description" content="Multi-column Nostr feed reader." />
   <meta name="theme-color" content="#040208" media="(prefers-color-scheme: dark)" />
   <meta name="color-scheme" content="dark" />
+  <style>
+    html, body { background: #040208; color: #f4efff; }
+  </style>
   <meta name="format-detection" content="telephone=no" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -16,7 +19,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico?v=feedstr-fd-logo" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png?v=feedstr-fd-logo" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=feedstr-fd-logo" />
-  <link rel="stylesheet" href="./styles.css?v=schedule-1" />
+  <link rel="stylesheet" href="./styles.css?v=search-polish-1" />
 </head>
 <body>
 
@@ -41,6 +44,10 @@
     </div>
 
     <nav class="sidebar-nav">
+      <button class="sidebar-search-button" id="feedstr-search-btn" type="button" aria-label="Search Nostr profiles">
+        <span class="sidebar-search-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+        <span>Search people</span>
+      </button>
       <div class="sidebar-section">
         <span>Columns</span>
         <button class="section-add" id="add-column-btn" type="button" title="Add column" aria-label="Add column">
@@ -90,10 +97,33 @@
   <div class="columns" id="columns"></div>
 </div>
 
-<!-- floating compose button (primary on mobile) -->
+<!-- floating compose button (legacy mobile trigger, hidden when the bottom nav is active) -->
 <button class="compose-fab" id="compose-fab" type="button" aria-label="Compose a note">
   <span class="compose-fab-icon" aria-hidden="true"></span>
 </button>
+
+<nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Feedstr primary mobile navigation">
+  <button class="mobile-bottom-item" id="mobile-nav-home" type="button" data-mobile-nav="home" aria-label="Open Home feed">
+    <span class="mobile-bottom-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+    <span>Home</span>
+  </button>
+  <button class="mobile-bottom-item" id="mobile-nav-feeds" type="button" data-mobile-nav="feeds" aria-label="Choose Feedstr columns">
+    <span class="mobile-bottom-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span>
+    <span>Feeds</span>
+  </button>
+  <button class="mobile-bottom-compose" id="mobile-nav-compose" type="button" aria-label="Compose a note">
+    <span class="mobile-bottom-compose-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>
+    <span>Post</span>
+  </button>
+  <button class="mobile-bottom-item" id="mobile-nav-notifications" type="button" data-mobile-nav="notifications" aria-label="Open Notifications">
+    <span class="mobile-bottom-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
+    <span>Alerts</span>
+  </button>
+  <button class="mobile-bottom-item" id="mobile-nav-search" type="button" data-mobile-nav="search" aria-label="Search Nostr profiles">
+    <span class="mobile-bottom-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+    <span>Search</span>
+  </button>
+</nav>
 
 <!-- add column modal -->
 <div class="modal-overlay" id="add-column-modal">
@@ -174,27 +204,28 @@
   </div>
 </div>
 
-<script src="./app/state.js?v=quotes-1"></script>
-<script src="./app/icons.js?v=schedule-1"></script>
-<script src="./app/helpers.js?v=media-pass-9"></script>
-<script src="./app/boot.js?v=following-npub-1"></script>
-<script src="./app/relays.js?v=quotes-1"></script>
-<script src="./app/events.js?v=quotes-1"></script>
-<script src="./app/profiles.js?v=schedule-open-2"></script>
-<script src="./app/columns.js?v=quotes-1"></script>
-<script src="./app/column-feed.js?v=split-2"></script>
-<script src="./app/notifications.js?v=quotes-1"></script>
-<script src="./app/notes.js?v=split-2"></script>
-<script src="./app/threads.js?v=split-2"></script>
-<script src="./app/interactions.js?v=frontend-split-2"></script>
-<script src="./app/compose.js?v=schedule-queue-1"></script>
-<script src="./app/overlays.js?v=split-2"></script>
-<script src="./app/add-column.js?v=split-2"></script>
-<script src="./app/follow.js?v=split-2"></script>
-<script src="./app/column-store.js?v=split-2"></script>
-<script src="./app/mutes.js?v=split-2"></script>
-<script src="./app/counts-cache.js?v=schedule-open-1"></script>
-<script src="./app/init.js?v=frontend-split-2"></script>
+<script defer src="./app/state.js?v=quotes-1"></script>
+<script defer src="./app/icons.js?v=people-search-1"></script>
+<script defer src="./app/helpers.js?v=media-pass-9"></script>
+<script defer src="./app/boot.js?v=following-npub-1"></script>
+<script defer src="./app/relays.js?v=quotes-1"></script>
+<script defer src="./app/events.js?v=quotes-1"></script>
+<script defer src="./app/profiles.js?v=schedule-open-2"></script>
+<script defer src="./app/columns.js?v=side-menu-polish-1"></script>
+<script defer src="./app/column-feed.js?v=split-2"></script>
+<script defer src="./app/notifications.js?v=quotes-1"></script>
+<script defer src="./app/notes.js?v=split-2"></script>
+<script defer src="./app/threads.js?v=nested-threads-1"></script>
+<script defer src="./app/interactions.js?v=frontend-split-2"></script>
+<script defer src="./app/compose.js?v=schedule-queue-1"></script>
+<script defer src="./app/overlays.js?v=side-menu-polish-1"></script>
+<script defer src="./app/search.js?v=search-polish-1"></script>
+<script defer src="./app/add-column.js?v=split-2"></script>
+<script defer src="./app/follow.js?v=split-2"></script>
+<script defer src="./app/column-store.js?v=split-2"></script>
+<script defer src="./app/mutes.js?v=split-2"></script>
+<script defer src="./app/counts-cache.js?v=schedule-open-1"></script>
+<script defer src="./app/init.js?v=frontend-split-2"></script>
 
 </body>
 </html>

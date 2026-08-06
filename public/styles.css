@@ -94,6 +94,27 @@ body {
   overflow-y: auto;
   padding: 8px 0;
 }
+.sidebar-search-button {
+  width: calc(100% - 24px);
+  min-height: 44px;
+  margin: 6px 12px 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(188, 151, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(124, 60, 255, 0.09);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 800 13px/1 ui-monospace, monospace;
+  text-align: left;
+  transition: background .15s ease, border-color .15s ease, transform .1s ease;
+}
+.sidebar-search-button:hover { background: rgba(124, 60, 255, 0.16); border-color: var(--border-hot); }
+.sidebar-search-button:active { transform: translateY(1px); }
+.sidebar-search-icon { display: inline-flex; width: 18px; height: 18px; color: var(--purple-2); }
+.sidebar-search-icon svg { width: 100%; height: 100%; }
 .sidebar-section {
   display: flex;
   align-items: center;
@@ -212,6 +233,26 @@ body {
 }
 .sidebar-item:hover { background: rgba(124, 60, 255, 0.12); }
 .sidebar-item svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--muted); }
+.sidebar-column-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 10px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+}
+.sidebar-column-icon svg { width: 16px; height: 16px; }
+.sidebar-column-item.active .sidebar-column-jump {
+  color: var(--text);
+  background: rgba(124, 60, 255, 0.14);
+}
+.sidebar-column-item.active .sidebar-column-icon {
+  color: var(--purple-2);
+  background: rgba(124, 60, 255, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(188, 151, 255, 0.16);
+}
 .sidebar-column-item {
   display: flex;
   align-items: center;
@@ -310,6 +351,78 @@ body {
 .compose-fab:active { transform: scale(0.94); }
 .compose-fab-icon { display: inline-flex; width: 24px; height: 24px; }
 .compose-fab-icon svg { width: 100%; height: 100%; }
+
+/* mobile bottom nav: hidden on desktop, replaces the floating compose-only trigger on phones */
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 88;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: end;
+  gap: 3px;
+  padding: 5px max(8px, env(safe-area-inset-right)) max(3px, calc(env(safe-area-inset-bottom) - 18px)) max(8px, env(safe-area-inset-left));
+  border-top: 0;
+  background: linear-gradient(180deg, rgba(4, 2, 8, 0.18), rgba(4, 2, 8, 0.76) 42%, rgba(4, 2, 8, 0.98) 100%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 -8px 22px rgba(0, 0, 0, 0.38), 0 0 24px rgba(124, 60, 255, 0.13);
+}
+.mobile-bottom-item,
+.mobile-bottom-compose {
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: rgba(244, 239, 255, 0.78);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font: 800 10px/1 ui-monospace, monospace;
+  letter-spacing: -0.01em;
+  transition: color .15s ease, background .15s ease, transform .1s ease, box-shadow .15s ease;
+}
+.mobile-bottom-item:active,
+.mobile-bottom-compose:active { transform: translateY(1px) scale(.98); }
+.mobile-bottom-icon,
+.mobile-bottom-compose-icon { display: inline-flex; width: 22px; height: 22px; }
+.mobile-bottom-icon svg,
+.mobile-bottom-compose-icon svg { width: 100%; height: 100%; }
+.mobile-bottom-item > span:not(.mobile-bottom-icon),
+.mobile-bottom-compose > span:not(.mobile-bottom-compose-icon) {
+  display: block;
+  max-width: 0;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(3px);
+  transition: max-width .16s ease, max-height .16s ease, opacity .16s ease, transform .16s ease;
+}
+.mobile-bottom-item.active {
+  color: var(--text);
+  background: rgba(124, 60, 255, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(188, 151, 255, 0.22), 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+.mobile-bottom-item.active > span:not(.mobile-bottom-icon) {
+  max-width: 64px;
+  max-height: 12px;
+  opacity: 1;
+  transform: translateY(0);
+}
+.mobile-bottom-compose {
+  min-height: 52px;
+  margin-top: -10px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--sovereign-purple), #4d1fd1);
+  border: 1px solid rgba(181, 140, 255, 0.48);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.48), 0 0 26px rgba(124, 60, 255, 0.44);
+}
 
 /* compose modal */
 .compose-modal-card {
@@ -538,10 +651,12 @@ body {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(100% + 8px);
-  z-index: 20;
-  max-height: 260px;
+  top: calc(100% + 8px);
+  z-index: 60;
+  max-height: min(320px, 44dvh);
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 6px;
   border: 1px solid rgba(188, 151, 255, 0.22);
   border-radius: 14px;
@@ -1056,7 +1171,10 @@ body {
   font-size: 12px;
   color: var(--dim);
 }
-.thread-reply { margin-left: 14px; border-left: 2px solid rgba(188, 151, 255, 0.1); }
+.thread-reply {
+  margin-left: 10px;
+  border-left: 2px solid rgba(188, 151, 255, 0.1);
+}
 .note-header {
   display: flex;
   align-items: center;
@@ -1152,6 +1270,16 @@ body {
   width: 100%;
   max-height: 420px;
   object-fit: cover;
+}
+.note-media-grid:has(.note-media:nth-child(2)):not(:has(.note-media:nth-child(3))) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.note-media-grid:has(.note-media:nth-child(2)):not(:has(.note-media:nth-child(3))) .note-media {
+  aspect-ratio: 1 / 1;
+}
+.note-media-grid:has(.note-media:nth-child(2)):not(:has(.note-media:nth-child(3))) .note-media img {
+  height: 100%;
+  max-height: none;
 }
 /* Fullscreen image viewer.
    The overlay is the ONLY full-size element: position:fixed + inset:0 sizes it
@@ -2032,6 +2160,84 @@ body.media-lightbox-open { overflow: hidden; }
   letter-spacing: -0.04em;
   margin-bottom: 16px;
 }
+.people-search-modal {
+  width: min(680px, calc(100vw - 28px));
+  padding: 20px;
+}
+.people-search-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.people-search-head h2 { margin: 0 0 5px; }
+.people-search-head p,
+.people-search-status,
+.people-search-empty {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.people-search-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.people-search-form .field { margin: 0; }
+.people-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.people-result-card {
+  border: 1px solid rgba(188, 151, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.people-result-main {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+}
+.people-result-avatar { width: 48px; height: 48px; }
+.people-result-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.people-result-copy strong { font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-result-copy small,
+.people-result-copy span,
+.people-result-copy em { color: var(--muted); font-size: 12px; line-height: 1.35; font-style: normal; overflow: hidden; text-overflow: ellipsis; }
+.people-result-copy span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.people-result-copy em { color: var(--purple-2); }
+.people-result-actions { display: flex; gap: 8px; align-items: center; }
+@media (max-width: 640px) {
+  .people-search-modal {
+    width: 100%;
+    max-height: min(86vh, 720px);
+    border-radius: 20px 20px 0 0;
+    padding: 18px 14px calc(18px + env(safe-area-inset-bottom));
+  }
+  #add-column-modal.open:has(.people-search-modal) { align-items: flex-end; }
+  .people-search-form { grid-template-columns: 1fr; }
+  .people-result-card { grid-template-columns: 1fr; }
+  .people-result-actions { justify-content: stretch; }
+  .people-result-actions .btn { flex: 1; }
+}
 .modal-option {
   display: flex;
   align-items: center;
@@ -2673,6 +2879,7 @@ body::after {
 @media (max-width: 760px) {
   :root {
     --mobile-topbar-height: 54px;
+    --mobile-bottom-nav-height: 58px;
     --mobile-topbar-total: calc(var(--mobile-topbar-height) + env(safe-area-inset-top));
     --column-width: 100vw;
   }
@@ -2752,7 +2959,7 @@ body::after {
     width: 100vw;
     min-width: 100vw;
     max-width: 100vw;
-    height: calc(100dvh - var(--mobile-topbar-total));
+    height: 100%;
   }
   .column-header {
     min-height: 66px;
@@ -2791,7 +2998,7 @@ body::after {
     top: var(--mobile-topbar-total);
     width: min(56vw, 228px);
     min-width: 0;
-    height: calc(100dvh - var(--mobile-topbar-total));
+    height: calc(100dvh - var(--mobile-topbar-total) - var(--mobile-bottom-nav-height) - env(safe-area-inset-bottom));
     transform: translateX(calc(-100% - 8px));
     transition: transform .22s ease;
     border-right-color: rgba(188,151,255,.28);
@@ -2822,10 +3029,11 @@ body::after {
   }
   .sidebar-column-close svg { width: 18px; height: 18px; }
   .sidebar-footer { padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); }
-  /* The mobile trigger is the floating button, not the sidebar button. */
-  .compose-fab { display: flex; }
-  body.inline-reply-active .compose-fab,
-  body:has(.reply-box:focus-within) .compose-fab { display: none; }
+  /* Bottom navigation is the primary mobile trigger row; keep the desktop sidebar intact. */
+  .mobile-bottom-nav { display: grid; }
+  body.inline-reply-active .mobile-bottom-nav,
+  body:has(.reply-box:focus-within) .mobile-bottom-nav { display: none; }
+  .compose-fab { display: none; }
   .sidebar-compose { display: none; }
   /* Compose modal behaves as a sheet that fills the available height so the
      textarea has room and the Post button clears the iOS keyboard. */
@@ -2843,6 +3051,21 @@ body::after {
     font-size: 16px; /* >=16px stops iOS from zooming on focus */
   }
   .compose-actions { margin-top: 8px; padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); }
+  .mention-suggest {
+    position: fixed;
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+    top: auto;
+    bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom));
+    z-index: 220;
+    max-height: min(360px, 46dvh);
+    border-radius: 18px;
+    padding: 8px;
+  }
+  .mention-suggest-option {
+    min-height: 52px;
+    padding: 10px;
+  }
   .compose-helper-row,
   .compose-preview,
   .compose-tags,
@@ -2970,7 +3193,7 @@ body::after {
   .column-feed {
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: calc(86px + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--mobile-bottom-nav-height) + 18px + env(safe-area-inset-bottom));
     scrollbar-width: none;
   }
   .column-feed::-webkit-scrollbar { display: none; }
@@ -3362,21 +3585,352 @@ select:focus-visible,
   }
 }
 
-/* Drawer fix 1: iOS side menu should feel compact, not like a half-screen panel. */
+/* Drawer fix 2: polished mobile side menu with compact column chips. */
 @media (max-width: 760px) {
   .sidebar {
-    width: clamp(232px, 64vw, 268px);
-    max-width: calc(100vw - 84px);
+    width: clamp(252px, 68vw, 292px);
+    max-width: calc(100vw - 68px);
+    background:
+      radial-gradient(circle at 18% 0%, rgba(124, 60, 255, 0.18), transparent 14rem),
+      linear-gradient(180deg, rgba(10, 5, 19, 0.98), rgba(5, 2, 10, 0.98));
+    border-right: 1px solid rgba(188, 151, 255, 0.24);
+    border-radius: 0 22px 22px 0;
+    overflow: hidden;
   }
-  .sidebar-nav { padding-top: 8px; }
-  .sidebar-section { padding: 9px 11px 5px; }
-  .sidebar-item { padding-left: 11px; padding-right: 8px; }
-  .sidebar-footer { padding-left: 9px; padding-right: 9px; }
+  .sidebar-nav {
+    padding: 12px 10px 8px;
+  }
+  .sidebar-search-button {
+    width: 100%;
+    min-height: 50px;
+    margin: 0 0 16px;
+    border-radius: 18px;
+    background: rgba(124, 60, 255, 0.14);
+    border-color: rgba(188, 151, 255, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.025), 0 10px 24px rgba(0,0,0,.16);
+  }
+  .sidebar-section {
+    padding: 0 2px 8px;
+    margin-bottom: 4px;
+    letter-spacing: 0.18em;
+  }
+  .section-add {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    background: rgba(255,255,255,.035);
+  }
+  .sidebar-column-item {
+    gap: 6px;
+    margin: 3px 0;
+    border-radius: 16px;
+  }
+  .sidebar-column-jump {
+    min-height: 50px;
+    padding: 8px 8px 8px 10px;
+    border-radius: 16px;
+    font-size: 15px;
+    font-weight: 760;
+    gap: 11px;
+  }
+  .sidebar-column-icon {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+  .sidebar-column-close {
+    width: 38px;
+    height: 38px;
+    margin-right: 2px;
+    opacity: .86;
+    border-radius: 13px;
+    background: rgba(255,255,255,.025);
+  }
+  .sidebar-column-close svg { width: 16px; height: 16px; }
+  .sidebar-column-item.active {
+    background: rgba(124, 60, 255, 0.08);
+  }
+  .sidebar-footer {
+    padding: 10px 12px max(10px, calc(10px + env(safe-area-inset-bottom)));
+    gap: 8px;
+    background: linear-gradient(180deg, rgba(4,2,8,0), rgba(4,2,8,.38));
+  }
+  .connection-chip {
+    min-height: 56px;
+    border-radius: 16px;
+    padding: 9px 11px;
+  }
+  .connection-chip-icon {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+    border-radius: 13px;
+  }
+  .sidebar-status {
+    padding: 8px 6px 0;
+    font-size: 11px;
+    letter-spacing: .01em;
+  }
 }
 
 @media (max-width: 390px) {
   .sidebar {
-    width: clamp(220px, 62vw, 244px);
-    max-width: calc(100vw - 92px);
+    width: clamp(242px, 72vw, 278px);
+    max-width: calc(100vw - 54px);
+  }
+}
+
+/* Drawer fix 3: simplify the mobile sheet after visual QA.  The previous pass
+   made every row feel like a large card and the close buttons competed with the
+   column labels; keep it calmer and closer to a native side sheet. */
+@media (max-width: 760px) {
+  .sidebar {
+    width: clamp(252px, 64vw, 304px);
+    max-width: calc(100vw - 76px);
+    background:
+      radial-gradient(circle at 18% 0%, rgba(124, 60, 255, 0.12), transparent 13rem),
+      linear-gradient(180deg, rgba(8, 4, 16, 0.98), rgba(4, 2, 8, 0.98));
+    border-right-color: rgba(188, 151, 255, 0.2);
+    border-radius: 0 18px 18px 0;
+    box-shadow: 14px 0 46px rgba(0, 0, 0, 0.52), 0 0 28px rgba(124, 60, 255, 0.1);
+  }
+  .sidebar-nav {
+    padding: 10px 10px 6px;
+  }
+  .sidebar-search-button {
+    min-height: 46px;
+    margin-bottom: 14px;
+    border-radius: 15px;
+    background: rgba(124, 60, 255, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.018);
+  }
+  .sidebar-section {
+    padding-inline: 4px;
+    margin-bottom: 3px;
+    letter-spacing: 0.16em;
+  }
+  .section-add {
+    width: 32px;
+    height: 32px;
+  }
+  .sidebar-column-item {
+    gap: 4px;
+    margin: 1px 0;
+    border-radius: 13px;
+  }
+  .sidebar-column-jump {
+    min-height: 46px;
+    padding: 7px 7px 7px 10px;
+    border-radius: 13px;
+    font-size: 14px;
+    gap: 10px;
+  }
+  .sidebar-column-icon {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+    border-radius: 9px;
+  }
+  .sidebar-column-item.active {
+    background: transparent;
+  }
+  .sidebar-column-item.active .sidebar-column-jump {
+    background: rgba(124, 60, 255, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(188, 151, 255, 0.12);
+  }
+  .sidebar-column-close {
+    width: 32px;
+    height: 32px;
+    margin-right: 0;
+    border-radius: 10px;
+    opacity: 0.54;
+    background: transparent;
+  }
+  .sidebar-footer {
+    padding: 8px 10px max(9px, calc(9px + env(safe-area-inset-bottom)));
+    gap: 7px;
+    background: linear-gradient(180deg, rgba(4, 2, 8, 0), rgba(4, 2, 8, 0.26));
+  }
+  .connection-chip {
+    min-height: 50px;
+    padding: 7px 9px;
+    border-radius: 14px;
+  }
+  .connection-chip-icon {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+    border-radius: 11px;
+  }
+  .sidebar-status {
+    padding-top: 6px;
+  }
+}
+
+@media (max-width: 390px) {
+  .sidebar {
+    width: clamp(246px, 68vw, 286px);
+    max-width: calc(100vw - 62px);
+  }
+}
+
+/* Search polish 1: mobile people search sheet. */
+.people-search-modal {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(124, 60, 255, 0.2), transparent 15rem),
+    linear-gradient(180deg, rgba(17, 10, 31, 0.98), rgba(7, 3, 14, 0.98));
+  border-color: rgba(188, 151, 255, 0.24);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48), 0 0 44px rgba(124, 60, 255, 0.14);
+}
+.people-search-head {
+  align-items: center;
+  gap: 12px;
+  padding-right: 42px;
+}
+.people-search-badge {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 15px;
+  color: var(--purple-2);
+  background: rgba(124, 60, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(188, 151, 255, 0.16);
+}
+.people-search-badge svg { width: 20px; height: 20px; }
+.people-search-title { min-width: 0; }
+.people-search-head h2 {
+  font-size: 21px;
+  letter-spacing: -0.045em;
+  margin: 0 0 4px;
+}
+.people-search-head p {
+  max-width: 52ch;
+  margin: 0;
+}
+.people-search-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(188, 151, 255, 0.14);
+}
+.people-search-form {
+  padding: 10px;
+  border: 1px solid rgba(188, 151, 255, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.026);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.014);
+}
+.people-search-field > span {
+  margin: 0 2px 8px;
+  color: rgba(188, 151, 255, 0.82);
+  font-size: 11px;
+  letter-spacing: 0.13em;
+}
+.people-search-field input {
+  min-height: 48px;
+  border-radius: 16px;
+  border-color: rgba(188, 151, 255, 0.2);
+  background: rgba(4, 2, 8, 0.58);
+  padding: 12px 14px;
+  font-size: 16px;
+  box-shadow: none;
+}
+.people-search-field input:focus {
+  border-color: rgba(124, 60, 255, 0.62);
+  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.16);
+}
+.people-search-submit {
+  min-height: 48px;
+  border-radius: 16px;
+  padding-inline: 20px;
+  white-space: nowrap;
+}
+.people-search-status {
+  padding: 0 2px;
+}
+
+@media (max-width: 640px) {
+  #add-column-modal.open:has(.people-search-modal) {
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 10px max(8px, env(safe-area-inset-bottom));
+    background:
+      radial-gradient(circle at 50% 18%, rgba(124, 60, 255, 0.14), transparent 15rem),
+      rgba(0, 0, 0, 0.66);
+  }
+  .people-search-modal {
+    width: min(100%, 420px);
+    max-width: calc(100vw - 20px);
+    max-height: min(74dvh, 640px);
+    margin: 0 auto;
+    border-radius: 26px;
+    padding: 16px 14px 16px;
+    overflow-y: auto;
+  }
+  .people-search-head {
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-right: 38px;
+  }
+  .people-search-badge {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+    border-radius: 13px;
+  }
+  .people-search-badge svg { width: 18px; height: 18px; }
+  .people-search-head h2 { font-size: 19px; }
+  .people-search-head p {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .people-search-close {
+    top: 12px;
+    right: 12px;
+    width: 34px;
+    height: 34px;
+  }
+  .people-search-form {
+    gap: 9px;
+    padding: 9px;
+    border-radius: 19px;
+    margin-bottom: 10px;
+  }
+  .people-search-field input,
+  .people-search-submit {
+    min-height: 46px;
+    border-radius: 15px;
+  }
+  .people-search-submit {
+    width: 100%;
+  }
+  .people-search-status,
+  .people-search-empty {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .people-search-results {
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .people-result-card {
+    padding: 9px;
+    border-radius: 17px;
+    background: rgba(255, 255, 255, 0.028);
+  }
+  .people-result-main {
+    grid-template-columns: 42px 1fr;
+  }
+  .people-result-avatar {
+    width: 42px;
+    height: 42px;
   }
 }

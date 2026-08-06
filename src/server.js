@@ -51,6 +51,10 @@ async function route(req, res) {
     return uploadMedia(req, res);
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/v1/nostr/nip05') {
+    return resolveNip05(res, url.searchParams.get('address'));
+  }
+
   // Feedstr's own metadata store: column config, feed rules, mutes, read-position.
   const stateMatch = url.pathname.match(/^\/api\/v1\/state\/([A-Za-z0-9:_-]+)$/);
   if (stateMatch) {
@@ -84,7 +88,7 @@ async function route(req, res) {
 
   if (req.method === 'GET' || req.method === 'HEAD') {
     const acceptsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] ?? '');
-    return serveStatic(url.pathname, res, req.method === 'HEAD', acceptsGzip);
+    return serveStatic(url.pathname, res, req.method === 'HEAD', acceptsGzip, url.searchParams.has('v'));
   }
 
   sendJson(res, 404, { error: 'not_found' });
@@ -277,6 +281,35 @@ async function updateEnvFile(path, updates) {
   return { path };
 }
 
+async function resolveNip05(res, address) {
+  const raw = String(address ?? '').trim().toLowerCase();
+  const match = raw.match(/^([a-z0-9_.-]+)@([a-z0-9.-]+\.[a-z]{2,})$/i);
+  if (!match) return sendJson(res, 400, { error: 'invalid_nip05', message: 'Expected name@domain.com' });
+  const [, name, domain] = match;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const target = `https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(name)}`;
+    const response = await fetch(target, { signal: controller.signal, headers: { Accept: 'application/json' } });
+    const body = await response.json().catch(() => null);
+    const pubkey = body?.names?.[name];
+    if (!response.ok || !/^[0-9a-f]{64}$/i.test(pubkey ?? '')) {
+      return sendJson(res, 404, { error: 'nip05_not_found', message: 'NIP-05 profile was not found' });
+    }
+    return sendJson(res, 200, {
+      address: raw,
+      name,
+      domain,
+      pubkey: pubkey.toLowerCase(),
+      relays: Array.isArray(body?.relays?.[pubkey]) ? body.relays[pubkey].filter(relay => /^wss?:\/\//i.test(relay)) : []
+    });
+  } catch (err) {
+    return sendJson(res, 502, { error: 'nip05_lookup_failed', message: err.name === 'AbortError' ? 'NIP-05 lookup timed out' : err.message });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function escapeEnvValue(value) {
   const text = String(value ?? '');
   if (/^[A-Za-z0-9_:/.,@%+=-]*$/.test(text)) return text;
@@ -366,14 +399,14 @@ function tokenStatusLabel(token) {
   return token ? 'configured' : '';
 }
 
-async function serveStatic(pathname, res, headOnly = false, acceptsGzip = false) {
+async function serveStatic(pathname, res, headOnly = false, acceptsGzip = false, versionedAsset = false) {
   const normalized = pathname === '/' ? '/index.html' : pathname;
   if (normalized.includes('..')) return sendJson(res, 400, { error: 'bad_path' });
   const filePath = join(publicDir, normalized);
   try {
     const data = await readFile(filePath);
     const type = contentType(filePath);
-    const headers = { 'Content-Type': type, 'Cache-Control': cacheControl(filePath), 'Vary': 'Accept-Encoding' };
+    const headers = { 'Content-Type': type, 'Cache-Control': cacheControl(filePath, versionedAsset), 'Vary': 'Accept-Encoding' };
     const compressible = /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg)/.test(type);
     if (headOnly) { res.writeHead(200, headers); return res.end(); }
     if (acceptsGzip && compressible && data.length > 1024) {
@@ -403,9 +436,11 @@ function contentType(filePath) {
   }[ext] ?? 'application/octet-stream';
 }
 
-function cacheControl(filePath) {
+function cacheControl(filePath, versionedAsset = false) {
   const ext = extname(filePath);
-  if (['.html', '.css', '.js', '.json', '.webmanifest'].includes(ext)) return 'no-store';
+  if (ext === '.html') return 'no-store';
+  if (versionedAsset) return 'public, max-age=31536000, immutable';
+  if (['.css', '.js', '.json', '.webmanifest'].includes(ext)) return 'no-store';
   return 'public, max-age=3600';
 }
 

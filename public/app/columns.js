@@ -8,6 +8,25 @@ function renderColumns() {
   listEl.innerHTML = '';
   for (const col of state.columns) buildColumnDom(col, container, listEl);
   saveColumns();
+  updateMobileNavActive?.();
+}
+
+function sidebarColumnIcon(col) {
+  if (col?.type === 'home') return 'home';
+  if (col?.type === 'notifications') return 'bell';
+  if (col?.type === 'hashtag') return 'hash';
+  if (col?.type === 'profile') return 'user';
+  if (col?.type === 'custom') return 'layers';
+  if (col?.type === 'following') return 'layers';
+  return 'globe';
+}
+
+function updateSidebarActiveColumn(activeId) {
+  document.querySelectorAll('.sidebar-column-item').forEach(item => {
+    const match = Boolean(activeId) && item.dataset.sideCol === activeId;
+    item.classList.toggle('active', match);
+    item.querySelector('.sidebar-column-jump')?.setAttribute('aria-current', match ? 'page' : 'false');
+  });
 }
 
 // Build the sidebar entry, column element, and subscription for a single column.
@@ -21,9 +40,13 @@ function buildColumnDom(col, container, listEl) {
   const jumpButton = document.createElement('button');
   jumpButton.className = 'sidebar-item sidebar-column-jump';
   jumpButton.type = 'button';
-  jumpButton.innerHTML = `<span class="sidebar-column-name">${esc(col.name)}</span>`;
+  jumpButton.innerHTML = `
+    <span class="sidebar-column-icon" aria-hidden="true">${iconSvg(sidebarColumnIcon(col))}</span>
+    <span class="sidebar-column-name">${esc(col.name)}</span>
+  `;
   jumpButton.onclick = () => {
     closeMobileMenu();
+    updateSidebarActiveColumn(col.id);
     document.querySelector(`.column[data-col="${col.id}"]`)?.scrollIntoView({ behavior: 'smooth', inline: 'start' });
   };
 

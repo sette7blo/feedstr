@@ -9,6 +9,12 @@ const idenstrSettingsBtn = document.getElementById('idenstr-settings-btn');
 const zapSettingsBtn = document.getElementById('zap-settings-btn');
 const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
 const mobileMenuBackdrop = document.getElementById('mobile-menu-backdrop');
+const mobileBottomNav = document.getElementById('mobile-bottom-nav');
+const mobileNavHome = document.getElementById('mobile-nav-home');
+const mobileNavFeeds = document.getElementById('mobile-nav-feeds');
+const mobileNavCompose = document.getElementById('mobile-nav-compose');
+const mobileNavNotifications = document.getElementById('mobile-nav-notifications');
+const mobileNavSearch = document.getElementById('mobile-nav-search');
 
 addColumnBtn.onclick = () => { closeMobileMenu(); showAddColumnModal(); };
 
@@ -38,6 +44,11 @@ idenstrSettingsBtn.onclick = () => { closeMobileMenu(); showIdenstrSettings(); }
 zapSettingsBtn.onclick = () => { closeMobileMenu(); showZapSettings(); refreshZapWalletBalance(); };
 mobileMenuToggle.onclick = () => toggleMobileMenu();
 mobileMenuBackdrop.onclick = () => closeMobileMenu();
+mobileNavHome.onclick = () => openMobileNavColumn('home');
+mobileNavFeeds.onclick = () => toggleMobileMenu();
+mobileNavCompose.onclick = () => openCompose();
+mobileNavNotifications.onclick = () => openMobileNavColumn('notifications');
+mobileNavSearch.onclick = () => { closeMobileMenu(); showPeopleSearch?.(); updateMobileNavActive('search'); };
 modal.onclick = (e) => { if (e.target === modal) closeModal(); };
 
 // Basic focus trap: keep Tab cycling inside the add-column / settings modal.
@@ -56,13 +67,60 @@ function toggleMobileMenu() {
   document.body.classList.toggle('mobile-menu-open', open);
   mobileMenuToggle.setAttribute('aria-expanded', String(open));
   mobileMenuToggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  updateMobileNavActive();
 }
 
 function closeMobileMenu() {
   document.body.classList.remove('mobile-menu-open');
   mobileMenuToggle.setAttribute('aria-expanded', 'false');
   mobileMenuToggle.setAttribute('aria-label', 'Open menu');
+  updateMobileNavActive();
 }
+
+function openMobileNavColumn(type) {
+  closeMobileMenu();
+  const labels = { home: 'Home', notifications: 'Notifications' };
+  const config = { type, name: labels[type] ?? type };
+  if (type === 'notifications') config.notificationFilter = 'all';
+  openOrFocusColumn(config, col => col.type === type);
+  updateMobileNavActive(type);
+}
+
+function mobileCurrentColumn() {
+  const container = document.getElementById('columns');
+  if (!container) return null;
+  const viewportCenter = container.scrollLeft + (container.clientWidth / 2);
+  let best = null;
+  let bestDistance = Infinity;
+  for (const el of container.querySelectorAll('.column')) {
+    const center = el.offsetLeft + (el.offsetWidth / 2);
+    const distance = Math.abs(center - viewportCenter);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = state.columns.find(col => col.id === el.dataset.col) ?? null;
+    }
+  }
+  return best;
+}
+
+function updateMobileNavActive(forceType = '') {
+  const currentColumn = forceType ? null : mobileCurrentColumn();
+  const current = forceType ? { type: forceType } : currentColumn;
+  updateSidebarActiveColumn?.(currentColumn?.id ?? '');
+  const active = document.body.classList.contains('mobile-menu-open') ? 'feeds' : (current?.type ?? '');
+  mobileBottomNav?.querySelectorAll('[data-mobile-nav]').forEach(btn => {
+    const match = btn.dataset.mobileNav === active || (btn.dataset.mobileNav === 'feeds' && active && !['home', 'notifications', 'search'].includes(active));
+    btn.classList.toggle('active', match);
+    btn.setAttribute('aria-current', match ? 'page' : 'false');
+  });
+}
+
+let mobileNavScrollTimer;
+document.getElementById('columns')?.addEventListener('scroll', () => {
+  clearTimeout(mobileNavScrollTimer);
+  mobileNavScrollTimer = setTimeout(updateMobileNavActive, 90);
+}, { passive: true });
+window.addEventListener('resize', updateMobileNavActive);
 
 function closeModal() {
   modal.classList.remove('open', 'boost-sheet', 'raw-event-sheet', 'note-more-sheet');
